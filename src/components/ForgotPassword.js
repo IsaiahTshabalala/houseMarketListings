@@ -1,3 +1,10 @@
+/**
+ * File: ./src/components/ForgotPassword.js
+ * Description: Help user reset login password.
+ * Date        Dev  Version  Description
+ * 2023/07/27  ITA  1.00     Genesis.
+ * 2024/06/19  ITA  1.01     Add header comment.
+ */
 import { useEffect, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { sendPasswordResetEmail } from "firebase/auth";

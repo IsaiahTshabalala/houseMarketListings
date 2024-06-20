@@ -5,8 +5,9 @@
  * Provide a single selection, searchable dropdown that takes an array of objects.
  * A developer must specify which field name to use for displaying (the keyName), and which field name to use as value (valueName).
  * * --------------------------------------------------------------------------------
- * Date       Dev       Description
- * 2023/12/19 ITA       Genesis.
+ * Date        Dev    Version Description
+ * 2023/12/19  ITA    1.00    Genesis.
+ * 2024/06/18  ITA    1.01    Add version number.
  */
 import PropTypes from 'prop-types';
 import { useEffect, useState, useContext, memo } from 'react';

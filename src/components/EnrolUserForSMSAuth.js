@@ -1,4 +1,10 @@
-
+/**
+ * File: ./src/components/EnroUserForSMSAuth.js
+ * Description: Enrol user for SMS authentication.
+ * Date        Dev   Version Description
+ * 2023/06/04  ITA   1.00    Genesis.
+ * 2024/04/02  ITA   1.00    Add header comment. Improve the appearance of the Enrol for SMS Authentication link.
+ */
 import { multiFactor, PhoneAuthProvider, PhoneMultiFactorGenerator,
          RecaptchaVerifier } from 'firebase/auth';
 import { useState } from 'react';
@@ -112,7 +118,7 @@ function EnrolUserForSMSAuth({phoneNumber, displayName}) {
                 
                 <>
                     {!phoneVerified &&
-                        <NavLink onClick={prepareVerification}>Enrol for phone number authentication</NavLink>
+                        <NavLink className='w3-btn w3-margin-small w3-theme-d5 w3-round' onClick={prepareVerification}>Enrol for SMS authentication</NavLink>
                     }
                 </>
                 

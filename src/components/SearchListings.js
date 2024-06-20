@@ -1,3 +1,12 @@
+/**
+ * File: ./src/components/SearchListings.js
+ * Description:
+ * Facilitate searching of listings.
+ * 
+ * Date         Dev  Version  Description
+ * 2024/01/11   ITA  1.00     Genesis.
+ * 2024/05/01   ITA  1.01     Add header comment. Update the paths.
+ */
 import { useEffect, useState, useContext, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { collectionsContext } from '../hooks/CollectionsProvider';
@@ -330,10 +339,10 @@ function SearchListings() {
             
             let path = null;
 
-            if (location.pathname === '/')
-                path = '/listings';
-            else if (location.pathname === '/offers') 
-                path = '/offers/listings';            
+            if (location.pathname === '/search')
+                path = '/search/listings';
+            else if (location.pathname === '/search/offers') 
+                path = '/search/offers/listings';            
 
             navigate(path);
         } catch (error) {

@@ -1,8 +1,12 @@
 /**File: firestoreComms.js
  * Description: Functions that help with querying Firestore data.
+ * 
+ * Date         Dev  Version  Description
+ * 2024/01/21   ITA  1.00     Genesis.
+ * 2024/05/16   ITA  1.01     Add more variables.
  */
-import { collection, getDocs, getDoc, doc, query, where, 
-         or, and, orderBy, limit, startAfter } from 'firebase/firestore';
+import { collection, collectionGroup, getDocs, getDoc, doc, query, where, 
+         or, and, orderBy, limit, startAfter, getAggregateFromServer, count } from 'firebase/firestore';
 import { db } from '../config/appConfig.js';
 import { getSortedObject } from './commonFunctions.js';
 
@@ -18,11 +22,20 @@ export const PROVINCES = 'provinces',
              LISTINGS = 'listings',
              CLICKED_LISTING = 'clickedListing',
              GET_LISTINGS_QUERY_OBJECT = 'getListingsQueryObject',
-             QUERY_TIME = 'queryTime';
+             QUERY_TIME = 'queryTime',
+             REPORTS = 'reports';
 
 export const propertyTypes = ['House', 'Apartment/Flat', 'Town House', 'Room', 'Vacant Land'],
              transactionTypes = ['Rent', 'Sale'],
              numberOfBedrooms = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+
+export const QueryTypes = Object.freeze({
+    START_FROM_BEGINNING: 1, // Query from the beginning of the listings collection.
+    START_AFTER_LAST_DOC: 2 // Query after a specified document.
+});
+
+export const NUMBER_OF_DOCS = 'numberOfDocuments', // The current number of documents that are being listened to.
+             LAST_DOC = 'lastDocument'; // The last document that was retrieved from Firestore.
 
 export async function getCollectionDocs(path, withIds = false) {
     const collectionRef = collection(db, path);
@@ -241,6 +254,89 @@ export function getListingsByUserIdQueryObject(userId, numDocs = null, startAfte
                     );
     return myQuery;
 } // function getListingsByUserIdQueryObject() {
+
+export async function getListingCountPerProvince(provincialCode) {
+    // Get the total number of listings for a province.
+
+    const collectionRef = collection(db, '/listings');
+    const constraints = [
+                            where('address.provincialCode', '==', provincialCode),
+                            where('flagged', '==', false)
+                        ];
+
+    const myQuery = query(collectionRef, ...constraints);
+    const snapshot = await getAggregateFromServer(myQuery, {
+                                countOfDocs: count()
+                            });
+    return snapshot.data().countOfDocs;
+} // export async function getListingCountProvince(provincialCode)
+
+export async function getListingCountPerMunicipality(provincialCode, municipalityCode) {
+    // Get the total number of listings for a municipality.
+
+    const collectionRef = collection(db, '/listings');
+    const constraints = [
+                            where('address.provincialCode', '==', provincialCode),
+                            where('address.municipalityCode', '==', municipalityCode),
+                            where('flagged', '==', false)
+                        ];
+
+    const myQuery = query(collectionRef, ...constraints);
+    const snapshot = await getAggregateFromServer(myQuery, {
+                                countOfDocs: count()
+                            });
+    return snapshot.data().countOfDocs;
+} // export async function getListingCountPerMunicipality(provincialCode, municipalityCode)
+
+export async function getListingCountPerMainPlace(provincialCode, municipalityCode, mainPlaceCode) {
+    // Get the total number of listings for a main place.
+
+    const collectionRef = collection(db, '/listings');
+    const constraints = [
+                            where('address.provincialCode', '==', provincialCode),
+                            where('address.municipalityCode', '==', municipalityCode),
+                            where('address.mainPlaceCode', '==', mainPlaceCode),
+                            where('flagged', '==', false)
+                        ];
+
+    const myQuery = query(collectionRef, ...constraints);
+    const snapshot = await getAggregateFromServer(myQuery, {
+                                countOfDocs: count()
+                            });
+    return snapshot.data().countOfDocs;
+} // export async function getListingCountPerMainPlace(provincialCode, municipalityCode, mainPlaceCode)
+
+export function getListingsPerMainPlaceQueryObject(provincialCode, municipalityCode, mainPlaceCode,
+                                                    numDocs = null, startAfterDoc = null) {
+    // Return a query object to be used for querying listings in a mainPlace.
+
+    const collectionRef = collection(db, '/listings');
+    const constraints = [
+                            where('address.provincialCode', '==', provincialCode),
+                            where('address.municipalityCode', '==', municipalityCode),
+                            where('address.mainPlaceCode', '==', mainPlaceCode),
+                            where('flagged', '==', false)
+                        ];
+
+    if (numDocs !== null)
+        constraints.push(limit(numDocs));
+    if (startAfterDoc !== null)
+        constraints.push(startAfter(startAfterDoc));
+    
+    return query(collectionRef, ...constraints);
+} // export function getListingsPerMainPlaceQueryObject()
+
+export function getReportsToReviewQuery(numDocs = null, startAfterDoc = null) {
+    const collectionRef = collectionGroup(db, 'reports');
+    const constraints = [where('reviewed', '==', false)];
+    constraints.push(orderBy('listingId'));
+    if (numDocs !== null)
+        constraints.push(limit(numDocs));
+    if (startAfterDoc !== null)
+        constraints.push(startAfter(startAfterDoc));
+
+    return query(collectionRef, ...constraints);
+} // export function getReportsToReviewQuery() {
 
 export function getAllProvinces() {
     const path = PROVINCES;

@@ -1,7 +1,12 @@
 /*
-File: loader.css
-Purpose: used to create a loader component.
-Source: https://www.w3schools.com/howto/howto_css_loader.asp
+File: ./src/loader.css
+Purpose: CSS classes for a regular sized and small loader.
+Source: https://www.w3schools.com/howto/howto_css_loader.asp 
+
+Date        Dev  Version  Description
+2023/12/12  ITA  1.00     Genesis.
+2024/05/26  ITA  1.01     Add comment header.
+                          Increase the size of the small loader to 8px.
 */
 
 .loader {
@@ -14,11 +19,11 @@ Source: https://www.w3schools.com/howto/howto_css_loader.asp
   }
 
   .loader-small {
-    border: 6px solid #f3f3f3; /* Light grey */
-    border-top: 6px solid #c4d0c0;
+    border: 8px solid #f3f3f3; /* Light grey */
+    border-top: 8px solid #c4d0c0;
     border-radius: 50%;
-    width: 15px;
-    height: 15px;
+    width: 45px;
+    height: 45px;
     animation: spin 2s linear infinite;    
   }
   

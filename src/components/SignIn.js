@@ -1,3 +1,12 @@
+/**
+ * File: ./src/Signin.js
+ * Description: Facilitate user login.
+ * 
+ * Date        Dev   Version  Description
+ * 2023/12/10  ITA   1.00     Genesis.
+ * 2024/06/10  ITA   1.01     Add header comment. 
+ *                            Change the links (NavLinks) to appear as buttons.
+ */
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useState, createContext, useEffect } from 'react';
 import SignInEmail from './SignInEmail';
@@ -50,8 +59,8 @@ function SignIn() {
                 </>
                 <>
                     {displayedComponent === null &&
-                        <p>           
-                            <NavLink className='w3-margin w3-padding w3-large' to='/'><FaHome/></NavLink>
+                        <p className='w3-margin'>           
+                            <NavLink className='w3-margin w3-btn w3-round w3-theme-d5 w3-padding w3-large' to='/'><FaHome/></NavLink>
                         </p>
                     }
                 </>

@@ -1,4 +1,13 @@
-
+/**
+ * File: ./src/components/SignInSMSVerification.js
+ * Description:
+ * Facilitate sending SMS authentication to the user.
+ * 
+ * Date        Dev   Version  Description
+ * 2023/12/07  ITA   1.00     Genesis
+ * 2024/06/10  ITA   1.01     Add header comment.
+ *                            The Navlinks to appear as buttons.
+ */
 import { getMultiFactorResolver, PhoneAuthProvider, 
          PhoneMultiFactorGenerator, RecaptchaVerifier } from 'firebase/auth';
 import { useState, useContext, useEffect } from 'react';
@@ -145,7 +154,7 @@ function SignInSMSVerification({multiFactorError}) {
                 <ToastContainer/>
                 <>
                     {phoneHintIndex >= 0 &&
-                        <NavLink onClick={prepareVerification}>Verify phone number</NavLink>
+                        <NavLink className='w3-btn w3-round w3-theme-d5' onClick={prepareVerification}>Verify phone number</NavLink>
                     }
                 </>
 

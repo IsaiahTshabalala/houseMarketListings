@@ -1,3 +1,12 @@
+/**
+ * File: ./src/components/SignInEmail.js
+ * Description: Facilitate login using email.
+ * 
+ * Date        Dev   Description
+ * 2023/07/26  ITA   Genesis.
+ * 2024/06/10  ITA   Add header commment
+ *                   Navlinks to appear as buttons.
+ */
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useState, useContext } from 'react';
 import { signInWithEmailAndPassword } from 'firebase/auth';
@@ -95,7 +104,7 @@ function SignInEmail() {
                     <>
                         {multiFactorError !== null?
                             <p>
-                                <button className='w3-margin-small w3-btn w3-round w3-theme-d5'
+                                <button className='w3-margin w3-btn w3-round w3-theme-d5'
                                                 type='button' onClick={reset}>Cancel</button>
                             </p>
                             :
@@ -108,8 +117,8 @@ function SignInEmail() {
                     <>
                     {multiFactorError === null &&
                         <p>
-                            <NavLink className='w3-margin w3-center' to='/forgot-password'>Forgot Password</NavLink>
-                            <NavLink className='w3-margin w3-center' to='/register'>Register</NavLink>
+                            <NavLink className='w3-btn w3-round w3-margin w3-center w3-theme-d5' to='/forgot-password'>Forgot Password</NavLink>
+                            <NavLink className='w3-btn w3-round w3-margin w3-center w3-theme-d5' to='/register'>Register</NavLink>
                         </p>
                     }
                     </>

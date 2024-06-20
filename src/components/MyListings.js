@@ -9,10 +9,10 @@ import { toast, ToastContainer } from 'react-toastify';
 import { IoIosArrowForward } from "react-icons/io";
 import { sharedVarsContext } from "../hooks/SharedVarsProvider";
 import Listings from './Listings';
-import Protected from './Protected';
+import Registered from './Registered';
 import { getListingsByUserIdQueryObject, GET_LISTINGS_QUERY_OBJECT } from '../utilityFunctions/firestoreComms';
-import { userContext } from '../hooks/UserProvider';
 import toastifyTheme from './toastifyTheme';
+import { w3ThemeD5 } from './moreStyles';
 
 function MyListings() {
     const {varExists, addVar} = useContext(sharedVarsContext);
@@ -26,7 +26,6 @@ function MyListings() {
                 return;
 
             firstRenderRef.current = false;
-
             try {
                 if (!varExists(GET_LISTINGS_QUERY_OBJECT)) {
                     addVar(GET_LISTINGS_QUERY_OBJECT, getListingsByUserIdQueryObject);
@@ -43,22 +42,22 @@ function MyListings() {
     }, []);
     
     return (
-        <Protected>
+        <Registered>
             <div className='w3-container'>
                 <h1>My Listings</h1>
                 <div>
-                    <NavLink to='/my-profile/listings/new'>
+                    <NavLink className="w3-button" style={w3ThemeD5} to='/my-profile/listings/new'>
                         Add new listing <IoIosArrowForward/>
                     </NavLink>
 
-                    {varExists(GET_LISTINGS_QUERY_OBJECT) &&
+                    {varExists(GET_LISTINGS_QUERY_OBJECT) && 
                         <Listings/>
                     }
 
                     <ToastContainer/>
                 </div>
             </div>            
-        </Protected>
+        </Registered>
     );
 }
 

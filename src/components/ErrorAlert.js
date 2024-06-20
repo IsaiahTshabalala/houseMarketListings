@@ -1,3 +1,10 @@
+/**
+ * File: ./src/components/ErrorAlert.js
+ * Description: Error Alert.
+ * Date        Dev  Version Description
+ * 2023/07/27  ITA  1.00    Genesis.
+ * 2024/06/18  ITA  1.01    Add header comment.
+ */
 import PropTypes from 'prop-types';
 import { FaTimesCircle } from 'react-icons/fa';
 import { useState } from 'react';

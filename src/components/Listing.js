@@ -1,8 +1,12 @@
+
 /**
  * File: '../src/components/Listing.js'
  * Purpose: Display the page of a listing that the user clicked in the Listings page.
- * Date         Dev        Description
- * 2023/12/12   ITA        Genesis.
+ * Date         Dev   Version  Description
+ * 2023/12/12   ITA   l.00     Genesis.
+ * 2024/06/18   ITA   1.01     Improve the appearance of the links such that they appear like buttons, using w3.css classes.
+ *                             Provide functionality for users to edit their listing. 
+ *                             Provide functionality for users to report and flag (moderators only) a listing.
  */
 import { useParams, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect, useContext, useState } from 'react';
@@ -10,18 +14,19 @@ import { FaBed, FaBath, FaRulerCombined, FaLandmark, FaCar, FaHome, FaUsers } fr
 import { LiaFileInvoiceDollarSolid } from "react-icons/lia";
 import { FaTachometerAlt } from "react-icons/fa";
 import { GiHomeGarage } from 'react-icons/gi';
-import { toZarCurrencyFormat } from '../utilityFunctions/commonFunctions';
-import { getUser } from '../utilityFunctions/firestoreComms';
+import { toZarCurrencyFormat, timeStampYyyyMmDd } from '../utilityFunctions/commonFunctions';
+import { getUser, CLICKED_LISTING } from '../utilityFunctions/firestoreComms';
 import { sharedVarsContext } from '../hooks/SharedVarsProvider';
 import { collectionsContext } from '../hooks/CollectionsProvider';
 import { userContext } from '../hooks/UserProvider';
 import { toast, ToastContainer } from 'react-toastify';
 import toastifyTheme from './toastifyTheme';
 import Loader from './Loader';
+import ReportOrFlag from './ReportOrFlag';
 import { BsPencilFill } from 'react-icons/bs';
 
 function Listing() {
-    const parms = useParams();
+    const params = useParams();
     const navigate = useNavigate();
     const {getVar, varExists} = useContext(sharedVarsContext);
     const { currentUser } = useContext(userContext);
@@ -34,27 +39,27 @@ function Listing() {
     const [listing, setListing] = useState(null);
     const [slideIndex, setSlideIndex] = useState(0);
     const [sellerLoaded, setSellerLoaded] = useState(true);
-    const location = useLocation(); // Returns the location object (which is the Url in the web-browser);
-    const [listingsLocation, setListingsLocation] = useState(null);
+    const location = useLocation(); // The location which is the current Url.
+    const [listingsLocation, setListingsLocation] = useState(null); // The url to return back to, from this listing page.
 
     useEffect(() => {
+        
         try {
             if (!collectionExists('sellers'))
                 addCollection('sellers', []); 
             // Get the listing that was clicked in the listings page.
-            if (varExists('clickedListing'))
-                setListing(getVar('clickedListing'));
+            if (varExists(CLICKED_LISTING))
+                setListing(getVar(CLICKED_LISTING));
             
             let path = location.pathname;
-            
             // Remove the /:listingId part from the current url.
-            path = path.substring(0, path.length - parms.listingId.length - 1);
+            path = path.substring(0, path.length - params.listingId.length - 1);
             setListingsLocation(path);
 
         } catch (error) {
             toast.error(error, toastifyTheme);
         } // catch(error)
-    }, []);    
+    }, []); // useEffect(() => {
     
     function goNext(next) { // Go to the next slide by 1 step.
         let index;
@@ -79,11 +84,11 @@ function Listing() {
     async function loadSellerInfo() {
         try {
             setSellerLoaded(false);
-            if (Object.keys(currentUser).length === 0) { // User not signed in, as the currentUser object from userContext is empty.
+            if (currentUser === null || (!('authCurrentUser' in currentUser))) { // User not signed in.
                 toast.error('You must be signed in to be able view seller information!', toastifyTheme);
                 return;
-            }
-            
+            } // if (currentUser === null || (!('authCurrentUser' in currentUser)))
+
             if (!('personalDetails' in currentUser)) {
                 toast.error('You must complete registration of your account be able to view seller information!', toastifyTheme);
                 return;
@@ -94,6 +99,7 @@ function Listing() {
             let seller = sellers.find(aSeller=> {
                 return aSeller.userId === listing.userId;
             });
+
             // If seller was not found in the collection, then get it from Firestore.
             if (seller === undefined) {
                 seller = await getUser(listing.userId);
@@ -102,10 +108,10 @@ function Listing() {
                     seller.sortField = seller.userId;  // Add the sortField, a requirement for the collectionsContext to enable sorting.
                     updateCollection('sellers', [...sellers, seller]);
                     listing.seller = seller;
-                }
+                } // if (seller !== null)
                 else
                     toast.error('Seller not found! This is unusual. We apologise for the inconvenience.', toastifyTheme);
-            } // if (seller === undefined) {
+            } // if (seller === undefined)
             else
                 listing.seller = seller;
         } catch (error) {
@@ -137,7 +143,7 @@ function Listing() {
         <div className='w3-container'>
             <h1>Listing</h1>
             <p>
-                <NavLink to={listingsLocation}>Back to listings</NavLink>
+                <NavLink className="w3-btn w3-theme-d5 w3-round" to={listingsLocation}>Back to listings</NavLink>
             </p>
             <hr/>
             {listing === null?
@@ -145,10 +151,11 @@ function Listing() {
                     Could not display the listing at this time.
                 </p>
                 :
-                <>                    
+                <>  
                     <h5>
                         {`${listing.propertyType} for ${listing.transactionType}`}
                     </h5>
+
                     <h5>
                         Where:<br/>
                         {
@@ -168,12 +175,16 @@ function Listing() {
                         <span> {listing.address.provinceName}</span>
                     </h5>
                     
-                    {(location.pathname === `/my-profile/listings/${listing.docId}`) &&
+                    <p/>
+                    
+                    <ReportOrFlag/>
+                    
+                    {(location.pathname === `/my-profile/listings/${params.listingId}`) &&
                         <h4>
-                            <NavLink onClick={goToEdit}><BsPencilFill/>Edit this listing</NavLink>
+                            <NavLink className='w3-btn w3-round w3-theme-d5' onClick={goToEdit}><BsPencilFill/>Edit this listing</NavLink>
                         </h4>
                     }
-                    
+
                     <div className='w3-container w3-center w3-padding-small w3-content w3-display-container w3-margin-top'
                         style={{width: '90%'}}>
                         {listing.images.map((image, index)=> {
@@ -197,7 +208,7 @@ function Listing() {
                     </div>
 
                     <div>
-                        {(('offer' in listing.priceInfo) && (new Date(listing.priceInfo.offer.expiryDate).getTime()) >= Date.now())?
+                        {(('offer' in listing.priceInfo) && (timeStampYyyyMmDd(listing.priceInfo.offer.expiryDate) >= timeStampYyyyMmDd(new Date())))?
                             <div className='w3-border w3-round w3-theme-dark w3-padding w3-margin-top'>
                                 <h3>
                                     Discount Offer: {
@@ -266,15 +277,14 @@ function Listing() {
                         Posted on {listing.dateCreated.toDateString()}.
                     </h4>
 
-                    {(('uid' in currentUser)
-                        && (currentUser.uid === listing.userId))?
+                    {(currentUser !== null) && (currentUser.authCurrentUser?.uid === listing.userId)?
                         <>
                             <h4>
                                 <u>You created this listing.</u>
                             </h4>
                             {(location.pathname === `/my-profile/listings/${listing.docId}`) &&
                                 <h4>
-                                    <NavLink onClick={goToEdit}><BsPencilFill/>Edit this listing</NavLink>
+                                    <NavLink className='w3-btn w3-round w3-theme-d5' onClick={goToEdit}><BsPencilFill/>Edit this listing</NavLink>
                                 </h4>
                             }
                         </>
@@ -290,7 +300,7 @@ function Listing() {
                                         </p>
                                         :
                                         <h4>
-                                            <NavLink onClick={e=> loadSellerInfo()}>
+                                            <NavLink className="w3-btn w3-round w3-theme-d5" onClick={e=> loadSellerInfo()}>
                                                 Contact Seller
                                             </NavLink>
                                         </h4>
@@ -306,9 +316,10 @@ function Listing() {
 
             <hr/>
             <p>
-                <NavLink to={listingsLocation}>Back to listings</NavLink>
+                <NavLink className="w3-btn w3-round w3-theme-d5" to={listingsLocation}>Back to listings</NavLink>
             </p>
             <ToastContainer/>
+
         </div>
     )
 }

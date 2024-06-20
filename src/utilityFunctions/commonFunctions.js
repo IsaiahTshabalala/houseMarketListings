@@ -1,11 +1,12 @@
 /**
- * File: validations.js
+ * File: ./src/utilityFunctions/commonFunctions.js
  * -----------------------------------------------------------------------------
  * Description: provides functions for validation of fields.
  * NB. For front-end use only!! The regExes herein may expose an application to regEx attacks if used at backend.
- * -----------------------------------------------------------------------------
- * Date       Dev   Description
- * 2023/07/28 ITA   Genesis.
+ * -------------------------------------------------------------------------------------------------------------
+ * Date        Dev   Version  Description
+ * 2023/07/28  ITA   1.00     Genesis.
+ * 2024/05/08  ITA   1.01     Rename function timeStampYyyyMmHh to timeStampYyyyMmDd.
  */
 const loDash = require('lodash');
 
@@ -188,7 +189,7 @@ export function getSortedObject(pObject) {
   return sortedObject;
 } // function getSortedObject(pObject) {
 
-export function timeStampYyyyMmHh(dateObj) {
+export function timeStampYyyyMmDd(dateObj) {
     // Convert the date to string form yyyy-mm-dd
     let year = dateObj.getFullYear();
     let month = dateObj.getMonth() + 1;
@@ -196,7 +197,7 @@ export function timeStampYyyyMmHh(dateObj) {
     let day = dateObj.getDate();
     day = addLeadingZeros(day, 2);
     return `${year}-${month}-${day}`;
-} // export function timeStampYYYYMMHH(dateObj) { 
+} // export function timeStampYYYYMMDd(dateObj) { 
 
 export function timeStampString(dateObj) {
     // Convert a string to the form yyyy-mm-ddThh:mm:ss.ccc , e.g. '2024-02-25T15:00:25.251'
@@ -204,7 +205,7 @@ export function timeStampString(dateObj) {
     let minutes = addLeadingZeros(dateObj.getMinutes(), 2);
     let seconds = addLeadingZeros(dateObj.getSeconds(), 2);
     let milliSec = addLeadingZeros(dateObj.getMilliseconds(), 3);
-    return `${timeStampYyyyMmHh(dateObj)}T${hours}:${minutes}:${seconds}.${milliSec}`;
+    return `${timeStampYyyyMmDd(dateObj)}T${hours}:${minutes}:${seconds}.${milliSec}`;
 } // export function timeStampString(dateObj) {
 
 export function addLeadingZeros(aNumber, newLength) {

@@ -2,6 +2,10 @@
  * File: ./src/hooks/SharedVarsProvider.js.
  * Description:
  * A useContext hook that is to be used to enable sharing of variables between components.
+ * 
+ * Date        Dev    Version Description
+ * 2024/02/29  ITA    1.00    Genesis
+ * 2024/05/11  ITA    1.01    Add comment header.
  */
 import { createContext, useRef } from "react";
 import PropTypes from 'prop-types';
@@ -42,11 +46,11 @@ export default function SharedVarsProvider({children}) {
     return (
         <sharedVarsContext.Provider
             value={{
-                addVar,
-                varExists,
-                getVar,
-                updateVar
-            }}>
+                    addVar,
+                    varExists,
+                    getVar,
+                    updateVar
+                }}>
             {children}
         </sharedVarsContext.Provider>
     );

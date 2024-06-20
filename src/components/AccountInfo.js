@@ -5,8 +5,9 @@
  * Used to enable the user to view, capture or update their account information.
  * Also enables the user to enrol for 2nd factor SMS authentication.
  * ----------------------------------------------------------------------------
- Date                Dev    Description
- 2023/11/20    ITA    Genesis. 
+ Date        Dev   Version  Description
+ 2023/11/20  ITA   1.00     Genesis.
+ 2024/06/16  ITA   1.01     Adjust the data from the userContext is retrieved.
  */
 import { useState, useEffect, useContext, useRef } from 'react';
 import { userContext } from '../hooks/UserProvider.js';
@@ -14,12 +15,12 @@ import { collectionsContext } from '../hooks/CollectionsProvider.js';
 import { doc, setDoc, Timestamp, deleteField } from 'firebase/firestore';
 import { db, isSignedIn } from '../config/appConfig.js';
 import { getAllProvinces, getMunicipalitiesPerProvince, getMainPlacesPerMunicipality, getSubPlacesPerMainPlace,
-         getUser, PROVINCES, MUNICIPALITIES, MAIN_PLACES, SUB_PLACES } from '../utilityFunctions/firestoreComms.js';
+         PROVINCES, MUNICIPALITIES, MAIN_PLACES, SUB_PLACES } from '../utilityFunctions/firestoreComms.js';
 import { ToastContainer, toast } from 'react-toastify';
 import { BiErrorCircle } from 'react-icons/bi';
 import { BsPencilFill, BsCheck } from 'react-icons/bs';
 import { MdCancel } from 'react-icons/md';
-import { hasValues, timeStampYyyyMmHh, isValidShortDescription, isValidMobileNo, isValidName,
+import { hasValues, timeStampYyyyMmDd, isValidShortDescription, isValidMobileNo, isValidName,
          isValidDisplayName, isValidStreetNo, deepClone } from '../utilityFunctions/commonFunctions.js';
 import toastifyTheme from './toastifyTheme.js';
 import '../w3.css';
@@ -414,18 +415,18 @@ function AccountInfo() {
         let data = deepClone({...init});
         // If the user (personalDetails) data is already there in the currentUser global state, retrieve from there,
         // to reduce trips (and related costs) Firestore.
-        if ('displayName' in currentUser && currentUser.displayName !== null) {
-            data = {...data, displayName: currentUser.displayName};
-            setFormData(data);
+        if ((currentUser !== null) && ('displayName' in currentUser.authCurrentUser) 
+            && (currentUser.authCurrentUser.displayName !== null)) {
+            data = {...data, displayName: currentUser.authCurrentUser.displayName};
         }
 
         try {
-            if (Object.keys(currentUser).length > 0) {
+            if (currentUser !== null) {
                 if ('personalDetails' in currentUser) {
                     data = {...data, ...currentUser.personalDetails};
                     data = {...data, ...data.address};
                     delete data['address'];
-                    data.dateOfBirth = timeStampYyyyMmHh(new Date(data.dateOfBirth.toString()));
+                    data.dateOfBirth = timeStampYyyyMmDd(new Date(data.dateOfBirth.toString()));
                     setFormData(data);
                     setUpdateMode(true); // Indicate that the form has been populated with data, and updates can be done by user.
                                         // Meaning the user can selectively update/edit the fields.
@@ -437,10 +438,11 @@ function AccountInfo() {
         } // try
         catch (error) {
             console.log(error);
-            toast.error(error, toastifyTheme);
+            toast.error('Some error occurred here. Please try again.', toastifyTheme);
             return false;
         } // catch (error)
-        finally {
+        finally {            
+            setFormData(data);
             setLoadingMessage(null);
         } // finally
 
@@ -650,7 +652,7 @@ function AccountInfo() {
         const {displayName, firstName, surname, dateOfBirth, mobileNo,
                     complexName, unitNo, streetNo, streetName,
                     provincialCode, municipalityCode, mainPlaceCode, subPlaceCode} = formData;
-        const email = currentUser.email;
+        const email = currentUser.authCurrentUser.email;
         
         let data = {
             personalDetails: {
@@ -693,12 +695,17 @@ function AccountInfo() {
             data.personalDetails.streetName = deleteField();
         
         let errorFound = false;
-        const docRef = doc(db, '/users', currentUser.uid);
+        const docRef = doc(db, '/users', currentUser.authCurrentUser.uid);
         await setDoc(docRef, data, {merge: true})
               .then(result=> {
-                    userDispatch({type: 'SET_PERSONAL_DETAILS', payload: {
-                        ...data.personalDetails, dateOfBirth: new Date(dateOfBirth)
-                    }});
+                    userDispatch(
+                        {
+                            type: 'SET_PERSONAL_DETAILS',
+                            payload: {
+                                ...data.personalDetails, dateOfBirth: new Date(dateOfBirth)
+                            }
+                        }
+                    );
                     setEditableFields({});
                     setUpdateMode(true);                    
                 })
@@ -730,7 +737,7 @@ function AccountInfo() {
 
     useEffect(() => {        
         (async ()=> {
-            if (Object.keys(currentUser).length === 0)
+            if (currentUser  === null)
                 return;
 
             if (firstRender.current === false)

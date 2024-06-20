@@ -35,7 +35,7 @@ function MultiSelectionDropdown2({
     const [searchText, setSearchText] = useState('');
     const [listKey, setListKey] = useState(Math.random());
     const [selectedItemsKey, setSelectedItemsKey] = useState(Math.random);
-    const keyStep = 0.001;
+    const keyStep = 0.000000000001;
     
     useEffect(()=> {
         try {

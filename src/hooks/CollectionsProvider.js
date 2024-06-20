@@ -1,12 +1,21 @@
-import { createContext, useRef } from 'react';
-import PropTypes from 'prop-types';
-import { getPaths } from '../utilityFunctions/commonFunctions';
-/**The purpose of this hook is to enable components to share collections of data.
+
+/**
+ * File: ./src/hooks/CollectionsProvider.js
+ * Description:
+ * A useContext hook.
+ * The purpose of this hook is to enable components to share collections of data.
  * An example of a typical application:
  * A component that has dropdowns. Each dropdown displays a collection that is shared with the parent component.
  * Each dropdown may get the collection data (items), set the and get the selected items.
  * The parent component may add a new collection, update the collection data, set and get the selected items.
+ * 
+ * Date        Dev   Version  Description
+ * 2024/02/16  ITA   1.00     Genesis.
+ * 2024/05/20  ITA   1.01     Add comment header.
 */
+import { createContext, useRef, useMemo } from 'react';
+import PropTypes from 'prop-types';
+import { getPaths } from '../utilityFunctions/commonFunctions';
 const collectionsContext = createContext();
 
 function CollectionsProvider({children}) {

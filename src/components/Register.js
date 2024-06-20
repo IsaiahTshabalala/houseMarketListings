@@ -1,7 +1,14 @@
+/**
+ * File: ./src/components/Register.js
+ * Description: Email sign up page. For users who opt to sign up using email addresses other than Gmail, Facebook and Yahoo.
+ * Date         Dev   Version Description
+ * 2023/07/27   ITA   1.00    Genesis.
+ * 2024/06/18   ITA   1.01    Add the header comment. Improve the appearance of the home and login links to look like buttons.
+ */
 import { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { createUserWithEmailAndPassword, getAuth } from "firebase/auth";
-import { auth, db } from '../config/appConfig';
+import { createUserWithEmailAndPassword } from "firebase/auth";
+import { auth } from '../config/appConfig';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { BiErrorCircle } from 'react-icons/bi';
@@ -10,6 +17,7 @@ import { useEffect } from 'react';
 import { isValidPassword, hasValues } from '../utilityFunctions/commonFunctions';
 import toastifyTheme from './toastifyTheme';
 import '../w3.css';
+import { FaHome } from 'react-icons/fa';
 
 const lodash = require('lodash');
 
@@ -29,7 +37,6 @@ function Register() {
     setFormData({...prev, [e.target.name]: e.target.value});
     validate();
   } // function handleChange(e)
-
 
   function showErrorIcon(fieldPath) {
     return (
@@ -120,8 +127,8 @@ function Register() {
           </div>
           
           <div className='w3-padding'>
-            <NavLink className='w3-margin' to='/signin'>Login</NavLink>
-            <NavLink className='w3-margin' to='/'>Home</NavLink>
+            <NavLink className='w3-btn w3-round w3-theme-d5' to='/signin'>Login</NavLink>
+            <NavLink className='w3-margin w3-btn w3-round w3-theme-d5' to='/'><FaHome/></NavLink>
           </div>
         </form>
 

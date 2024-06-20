@@ -1,3 +1,8 @@
+/**
+ * File: ./src/components/Loader.js
+ * Description:
+ * A loader component
+ */
 import '../loader.css';
 import PropTypes from 'prop-types';
 
