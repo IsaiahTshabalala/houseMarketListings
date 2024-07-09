@@ -1,9 +1,13 @@
 /**
  * File: ./src/app.js
  * Description: The root of the application.
- * Date         Dev   Description
- * 2023/07/26   ITA   Genesis
- * 2024/01/17   ITA   Add more routes. To accomodate more features.
+ * Date         Dev   Version   Description
+ * 2023/07/26   ITA   1.00      Genesis
+ * 2024/01/17   ITA   1.01      Add more routes. To accomodate more features.
+ * 2024/07/03   ITA   1.02      Add versions to the patch descriptions.
+ *                              Add the Title component (Discounted Listings) on top of the Listings component for the route /search/offers/listings/.
+ *                              Update route /search to /search/all, so that /search menu items are correctly highlightable, per selected item or current url.
+ *                              User to be navigated to the home page if unavailable url path entered.
  */
 import MenuBar from './components/MenuBar';
 import SignIn from './components/SignIn';
@@ -35,6 +39,7 @@ import Moderator from './components/Moderator';
 import LocationsProvider from './hooks/LocationsProvider';
 import LocationsRecorder from './components/LocationsRecorder';
 import Reports from './components/Reports';
+import { Navigate } from 'react-router-dom';
 
 function App() {
     
@@ -100,7 +105,7 @@ function App() {
                                         ]
                                     }
                                 ],
-                                errorElement: <ErrorPage2 message='Path not found.'/>
+                                errorElement: <Navigate to='/' />
                             },
                             {
                                 path: '/search',
@@ -125,7 +130,7 @@ function App() {
                                                 </SharedVarsProvider>,
                                             children: [
                                                 { 
-                                                    path: '/search/',
+                                                    path: '/search/all',
                                                     element:
                                                             /**SearchListings component shares collections with its dropdown components within it.
                                                              * Hence the <CollectionsProvider/> useContext hook. */
@@ -137,7 +142,7 @@ function App() {
                                                             </CollectionsProvider>
                                                 },
                                                 { 
-                                                    path: '/search/listings',
+                                                    path: '/search/all/listings',
                                                     element:                                                        
                                                             /** The Listing components share sellers collection amongst themselves.
                                                              * Hence the CollectionsProvider useContext hook. */
@@ -146,7 +151,7 @@ function App() {
                                                             </CollectionsProvider>,
                                                     children: [
                                                         {
-                                                            path: '/search/listings/',
+                                                            path: '/search/all/listings/',
                                                             element: 
                                                                     <>
                                                                         <Heading title='Listings'/>
@@ -154,7 +159,7 @@ function App() {
                                                                     </>
                                                         },
                                                         {
-                                                            path: '/search/listings/:listingId',
+                                                            path: '/search/all/listings/:listingId',
                                                             element: <Listing/>
                                                         }
                                                     ]
@@ -165,7 +170,7 @@ function App() {
                                                             <Outlet/>,
                                                     children: [
                                                         {
-                                                            path: '/search/offers/',
+                                                            path: '/search/offers',
                                                             element: 
                                                                     /**SearchListings component shares collections (provinces, municipalities, main places, sub-places)
                                                                      * with its dropdown components within it. Hence the <CollectionsProvider/> useContext hook. */
@@ -184,8 +189,12 @@ function App() {
                                                                     </CollectionsProvider>,
                                                             children: [
                                                                 {
-                                                                    path: '/search/offers/listings/',
-                                                                    element: <Listings/>
+                                                                    path: '/search/offers/listings',
+                                                                    element:
+                                                                            <>
+                                                                                <Heading title='Discounted Listings'/>
+                                                                                <Listings/>
+                                                                            </>
                                                                 },
                                                                 {
                                                                     path: '/search/offers/listings/:listingId',

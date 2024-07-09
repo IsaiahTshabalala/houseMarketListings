@@ -4,7 +4,12 @@
  * Date        Dev  Version  Description
  * 2023/12/15  ITA  1.00     Genesis
  * 2024/06/17  ITA  1.01     Add header comment. Rename the component Protected to Registered.
-                             Clicked listing state to be updated after addition or update.
+ *                           Clicked listing state to be updated after addition or update of listing.
+ *                           Rename field docId to listingId.
+ * 2024/07/07  ITA  1.02     Move function descriptions to the top, before each function.
+ *                           Remove the sortField from the provinces, municipalities, mainPlace and subPlaces collection items.
+ *                           Instead, use the name field for sorting. In keeping with improvements to the Collections class.
+ *                           Update the listings sharedVar during the addition/update of a listing.
  */
 import { doc, setDoc, Timestamp, deleteField } from 'firebase/firestore';
 import { db, auth } from '../config/appConfig.js';
@@ -23,12 +28,12 @@ import { v4 as uuidv4} from 'uuid';
 import { objectFromFile, hasValues,
          isValidDescription, isValidShortDescription, isValidStreetNo,
          isValidName, isValidNumBedrooms, isValidNaturalNumber,
-         isValidPositiveDecimalNumber, isValidDecimalNumber, deepClone, 
-         fileSizeMiB, timeStampString, timeStampYyyyMmDd } from '../utilityFunctions/commonFunctions.js';
+         isValidPositiveDecimalNumber, isValidDecimalNumber, deepClone, objCompare,
+         fileSizeMiB, timeStampString, timeStampYyyyMmDd,binarySearchObj } from '../utilityFunctions/commonFunctions.js';
 
 import { getAllProvinces, getMunicipalitiesPerProvince, 
          getMainPlacesPerMunicipality, getSubPlacesPerMainPlace,
-         PROVINCES, MUNICIPALITIES, MAIN_PLACES, SUB_PLACES,
+         PROVINCES, MUNICIPALITIES, MAIN_PLACES, SUB_PLACES, LISTINGS,
          transactionTypes, propertyTypes,
          TRANSACTION_TYPES, PROPERTY_TYPES,
          CLICKED_LISTING} from '../utilityFunctions/firestoreComms.js';
@@ -98,7 +103,7 @@ const allowedFileTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 function AddOrEditListing() {
     const location = useLocation();
     const navigate = useNavigate();
-    const parms = useParams();
+    const params = useParams();
     const [formData, setFormData] = useState(init);
     const [editableFields, setEditableFields] = useState({}); // Serves as the identifier of fields that were edited.
                                                             // and keeps the previous values of the edited fields before being saved
@@ -136,6 +141,8 @@ function AddOrEditListing() {
     const {addVar, getVar, varExists, updateVar} = useContext(sharedVarsContext);
 
     const firstRender = useRef(true);
+    const listingSortFields = ['dateCreated desc', 'listingId desc'];
+    const placeSortFields = ['name asc'];
 
     function goNext(next) { // Go to the next slide by 1 step.
         let index;
@@ -288,13 +295,11 @@ function AddOrEditListing() {
             </div>
         );
     } //  function showErrorIcon(fieldPath)
-
-
-
-    async function provinceSelected() {
-    /**Function called upon the selection of a province in the provinces dropdown, so as to update the municipalities 
-     * array of municipalities displayed and selectable in the municipalities dropdown.
+    
+    /**Function called upon the selection of a province in the provinces dropdown, so as to update the
+     * municipalities displayed in the municipalities dropdown to those of the selected province.
      */
+    async function provinceSelected() {
         try {
             // Get the currently selected province. From the collectionsContext.
             let selectedProvince = null;
@@ -316,7 +321,6 @@ function AddOrEditListing() {
             setMunicipalitiesLoaded(false);
             let municipalities = [];
             municipalities = await getMunicipalitiesPerProvince(newFormData.address.provincialCode);
-            municipalities = municipalities.map(doc=> ({...doc, sortField: doc.name}));
     
             // Update the municipalities shared collection in the collectionsContext hook.
             updateCollection(MUNICIPALITIES, municipalities);
@@ -328,8 +332,10 @@ function AddOrEditListing() {
         } // finally
     } // function provinceSelected() {
 
+    /** Function called upon the selection of the municipality in the municipalities dropdown. 
+     * To update the main places displayed the main places dropdown to those of the selected municipality.
+    */
     async function municipalitySelected() {
-    // Function called upon the selection of the municipality in the municipalities dropdown.
         
         try {
             // Get the currently selected municipality.
@@ -352,7 +358,6 @@ function AddOrEditListing() {
             setMainPlacesLoaded(false);
             let mainPlaces = [];
             mainPlaces = await getMainPlacesPerMunicipality(newFormData.address.provincialCode, newFormData.address.municipalityCode);
-            mainPlaces = mainPlaces.map(doc=> ({...doc, sortField: doc.name}));    
             updateCollection(MAIN_PLACES, mainPlaces);
 
         } catch (error) {
@@ -363,8 +368,10 @@ function AddOrEditListing() {
         }
     } // async function municipalitySelected() {
     
+    /**Function called upon the selection of a main place in the main places dropdown.
+     * To update the sub-places displayed in the sub-places dropdown to those of the selected main place.
+    */
     async function mainPlaceSelected() {
-    // Function called upon the selection of a main place in the main places dropdown.
 
         try {
             // Get the currently selected main place.
@@ -388,7 +395,6 @@ function AddOrEditListing() {
             let subPlaces = [];
             subPlaces = await getSubPlacesPerMainPlace(newFormData.address.provincialCode, newFormData.address.municipalityCode, 
                                                         newFormData.address.mainPlaceCode);
-            subPlaces = subPlaces.map(doc=> ({...doc, sortField: doc.name}));
             
             updateCollection(SUB_PLACES, subPlaces);            
         } catch (error) {
@@ -860,7 +866,6 @@ function AddOrEditListing() {
             }
         } // if (hasValues(uploadResult) && uploadResult.errors.length > 0) {
         else {
-            setUploadingErrors(null);
             if (hasValues(uploadResult) && uploadResult.downloadUrls.length > 0) {  // Verify if any images were uploaded.
                 for (const idx in uploadResult.downloadUrls) {
                     const fileName = uploadResult.succeededFiles[idx].name;
@@ -904,7 +909,7 @@ function AddOrEditListing() {
     } // function submitData() {
 
     async function updateClickedListing(newData) {
-        newData.docId = listingUniqueId.current;
+        newData.listingId = listingUniqueId.current;
         let province = getSelected(PROVINCES)[0],
             municipality = getSelected(MUNICIPALITIES)[0],
             mainPlace = getSelected(MAIN_PLACES)[0],
@@ -941,13 +946,20 @@ function AddOrEditListing() {
             addVar(CLICKED_LISTING, newData);
         else
             updateVar(CLICKED_LISTING, newData);
+
+        if (varExists(LISTINGS)) { // Update the listings shared var accordingly.
+            const theListings = [...getVar(LISTINGS)];
+            const index = binarySearchObj(theListings, newData, 0, ...listingSortFields);
+            theListings[index] = newData;
+            updateVar(LISTINGS, theListings);
+        } // if (varExists(LISTINGS)) {
     } // function updateClickedListing(data) {
     
     useEffect(() => {
         (async ()=> {
             if (firstRender.current === true) {
 
-                if ((location.pathname === `/my-profile/listings/${parms.listingId}/edit`) && (!varExists('clickedListing')))
+                if ((location.pathname === `/my-profile/listings/${params.listingId}/edit`) && (!varExists('clickedListing')))
                     navigate('/my-profile/listings');
                 
                 firstRender.current = false;
@@ -957,22 +969,21 @@ function AddOrEditListing() {
 
                     try {
                         // Add the transaction types collection
-                        addCollection(TRANSACTION_TYPES, transactionTypes, null, true) // null - no limit set on selected items. There's only 2 items to select from.
-                                                                                       // true - primitive type array supplied.
+                        addCollection(TRANSACTION_TYPES, transactionTypes, 1, true, 'asc')
                         // Add the property types collection
-                        addCollection(PROPERTY_TYPES, propertyTypes, null, true);
+                        addCollection(PROPERTY_TYPES, propertyTypes, 1, true, 'asc');
     
                         // Get the provinces from Firestore and load them to the collections.
                         setProvincesLoaded(false);
                         let provinces = [];    
                         provinces = await getAllProvinces();
-                        provinces = provinces.map(doc=> ({...doc, sortField: doc.name}));            
-                        addCollection(PROVINCES, provinces, 1);
+                        provinces = provinces.map(doc=> ({...doc}));
+                        addCollection(PROVINCES, provinces, 1, false, ...placeSortFields); // false - not a primitive type.
             
                         // For the municipalities, main places and sub-places, load the empty arrays to the collections.
-                        addCollection(MUNICIPALITIES, [], 1);
-                        addCollection(MAIN_PLACES, [], 1);
-                        addCollection(SUB_PLACES, [], 1);
+                        addCollection(MUNICIPALITIES, [], 1, false, ...placeSortFields);
+                        addCollection(MAIN_PLACES, [], 1, false, ...placeSortFields);
+                        addCollection(SUB_PLACES, [], 1, false, ...placeSortFields);
                         
                     } catch (error) {
                         toast.error(error, toastifyTheme);
@@ -981,7 +992,7 @@ function AddOrEditListing() {
                         setProvincesLoaded(true);
                     } // finally
                 } // if (!collectionExists(TRANSACTION_TYPES)) {
-                if (location.pathname === `/my-profile/listings/${parms.listingId}/edit`) {
+                if (location.pathname === `/my-profile/listings/${params.listingId}/edit`) {
                     retrieveListingInfo();
                 }
             } // if (firstRender.current === true) {
@@ -1031,8 +1042,8 @@ function AddOrEditListing() {
             // else data.rates has been set with all the blank rates from init object.
 
             setFormData(data);
-            listingUniqueId.current = data.docId;
-            delete data['docId']; // No longer needed from this point on.
+            listingUniqueId.current = data.listingId;
+            delete data['listingId']; // No longer needed from this point on.
 
             // Set the respective drop-downs
 
@@ -1045,16 +1056,11 @@ function AddOrEditListing() {
                 return doc.code === data.address.provincialCode;
             });
             if (province !== undefined) {
-                province = {...province, sortField: province.name}; // Original collection elements have the sortField.
-                // So the selected item be as one of the collection elements, otherwise it will be ignored.
                 setSelected(PROVINCES, [province]); // Set the selected province in the dropdown.
             } // if (province !== undefined) {
 
             // Update the municipalities collection with municipalities of the selected province
             let municipalities = await getMunicipalitiesPerProvince(data.address.provincialCode);
-            municipalities = municipalities.map(doc=> {
-                return {...doc, sortField: doc.name};
-            });
             updateCollection(MUNICIPALITIES, municipalities);
             let municipality = municipalities.find(doc=> {
                 return doc.code === data.address.municipalityCode;
@@ -1065,9 +1071,6 @@ function AddOrEditListing() {
 
             // Get the main places of the selected municipality and update the main place collection.
             let mainPlaces = await getMainPlacesPerMunicipality(data.address.provincialCode, data.address.municipalityCode);
-            mainPlaces = mainPlaces.map(doc=> {
-                return {...doc, sortField: doc.name};
-            });
             updateCollection(MAIN_PLACES, mainPlaces);
             let mainPlace = mainPlaces.find(doc=> {
                 return doc.code === data.address.mainPlaceCode;
@@ -1079,9 +1082,6 @@ function AddOrEditListing() {
             // Get the sub-places of the selected main place and update the sub-places collection.
             let subPlaces = await getSubPlacesPerMainPlace(data.address.provincialCode, data.address.municipalityCode,
                                                             data.address.mainPlaceCode);
-            subPlaces = subPlaces.map(doc=> {
-                return {...doc, sortField: doc.name};
-            });
             updateCollection(SUB_PLACES, subPlaces);
             let subPlace = subPlaces.find(doc=> {
                 return doc.code === data.address.subPlaceCode;

@@ -8,6 +8,8 @@
  Date        Dev   Version  Description
  2023/11/20  ITA   1.00     Genesis.
  2024/06/16  ITA   1.01     Adjust the data from the userContext is retrieved.
+ 2024/07/07  ITA   1.02     The CollectionsProvider uses an improved mechanism for sorting data. Eliminate the use of the sortFields and
+                            instead use the place names for sorting.
  */
 import { useState, useEffect, useContext, useRef } from 'react';
 import { userContext } from '../hooks/UserProvider.js';
@@ -75,11 +77,10 @@ function AccountInfo() {
     const [municipalitiesKey, setMunicipalitiesKey] = useState(Math.random());
     const [mainPlacesKey, setMainPlacesKey] = useState(Math.random());
     const [subPlacesKey, setSubPlacesKey] = useState(Math.random());
-
+    
+    /**Set the provincial code of the form data to that of the selected province in the provinces dropdown.
+     * Also reload the municpalities dropdown with the municipalities of the currently selected province. */
     async function provinceSelected() {
-        // Set the provincial code of the form data to that of the selected province in the provinces dropdown.
-        // Also reload the municpalities dropdown with the municipalities of the currently selected province.
-
         try {
             let result = getSelected(PROVINCES);
             let selectedProvince = null;
@@ -97,7 +98,6 @@ function AccountInfo() {
             setMunicipalitiesLoaded(false);
             let municipalities = [];
             municipalities = await getMunicipalitiesPerProvince(selectedProvince.code);
-            municipalities = municipalities.map(doc=> ({...doc, sortField: doc.name})); // Add the sort field.
 
             updateCollection(MUNICIPALITIES, municipalities); 
         } catch (error) {
@@ -109,11 +109,11 @@ function AccountInfo() {
         }
     } // function async provinceSelected(code) {
 
-    async function municipalitySelected() {
-    /* Update the municipality code of the form data with that of the currently selected municipality in the 
-        municipalities dropdown.
-        Also reload the main places dropdown with the main places of the currently selected municipality.
+    /** Update the municipality code of the form data with that of the currently selected municipality in the
+     * municipalities dropdown.
+     * Also reload the main places dropdown with the main places of the currently selected municipality.
     */
+    async function municipalitySelected() {
         try {
             let selectedMunicipality = null;
             const result = getSelected(MUNICIPALITIES); // Length 1 array expected.
@@ -131,7 +131,6 @@ function AccountInfo() {
             setMainPlacesLoaded(false);
             let mainPlaces = [];
             mainPlaces = await getMainPlacesPerMunicipality(newFormData.provincialCode, newFormData.municipalityCode);
-            mainPlaces = mainPlaces.map(doc=> ({...doc, sortField: doc.name}));  // sortField added.
             
             updateCollection(MAIN_PLACES, mainPlaces);
         } catch (error) {
@@ -169,7 +168,6 @@ function AccountInfo() {
             let subPlaces = [];
             // An array of sub-places of a particular main place.
             subPlaces = await getSubPlacesPerMainPlace(newFormData.provincialCode, newFormData.municipalityCode, newFormData.mainPlaceCode);
-            subPlaces = subPlaces.map(doc=> ({...doc, sortField: doc.name}));  // sort field added.
             updateCollection(SUB_PLACES, subPlaces);            
         } catch (error) {
             toast.error(error, toastifyTheme);
@@ -275,7 +273,7 @@ function AccountInfo() {
                             setMunicipalitiesLoaded(false);
                             await getMunicipalitiesPerProvince(tempFormData.provincialCode)
                                     .then(result=> { // An array of municipalities of a particular province.
-                                        municipalities = result.map(doc=> ({...doc, sortField: doc.name})); // Add the sort field.
+                                        municipalities = result;
                                     });
                             
                             updateCollection(MUNICIPALITIES, municipalities);
@@ -304,7 +302,7 @@ function AccountInfo() {
                             mainPlaces = [];
                             setMainPlacesLoaded(false);
                             await getMainPlacesPerMunicipality(tempFormData.provincialCode, tempFormData.municipalityCode)
-                                    .then(result=> mainPlaces = result.map(doc=> ({...doc, sortField: doc.name})));
+                                    .then(result=> mainPlaces = result);
     
                             updateCollection(MAIN_PLACES, mainPlaces);
     
@@ -335,7 +333,7 @@ function AccountInfo() {
     
                             // Get the sub-places 
                             await getSubPlacesPerMainPlace(tempFormData.provincialCode, tempFormData.municipalityCode, tempFormData.mainPlaceCode)
-                                    .then(result=> subPlaces = result.map(doc=> ({...doc, sortField: doc.name}))); // add sort field.
+                                    .then(result=> subPlaces = result);
                                 
                             updateCollection(SUB_PLACES, subPlaces);
     
@@ -450,16 +448,13 @@ function AccountInfo() {
             // Set the values displayed by the dropdowns.
             // Set the currently selected provincial code in the Dropdown.
             let provinces = [];
-            let anError = null;
             setProvincesLoaded(false);            
             
             if (collectionExists(PROVINCES))
                 provinces = getCollectionData(PROVINCES);
             else {
                 // At this stage, the Provinces collection had not been set. Retrieve from Firestore instead.
-                provinces = (await getAllProvinces()).map(prov=> {
-                    return {...prov, sortField: prov.name}; // Add sortField.
-                });
+                provinces = await getAllProvinces();
             }
             
             // Load the municipalities of the user address' provincial code.
@@ -478,7 +473,6 @@ function AccountInfo() {
                 if (data.provincialCode !== '' && data.municipalityCode !== '' 
                     && data.mainPlaceCode !== '' && data.subPlaceCode !== '') {
                     municipalities = await getMunicipalitiesPerProvince(data.provincialCode);
-                    municipalities = municipalities.map(doc=> ({...doc, sortField: doc.name}));
                     updateCollection(MUNICIPALITIES, municipalities);
                     // Set the currently selected municipality code in the dropdown.
                     const selectedMunicipality = municipalities.find(municipality=> {
@@ -492,7 +486,6 @@ function AccountInfo() {
                     setMainPlacesLoaded(false);
                     let mainPlaces = [];
                     mainPlaces = await getMainPlacesPerMunicipality(data.provincialCode, data.municipalityCode);
-                    mainPlaces = mainPlaces.map(doc=> ({...doc, sortField: doc.name}));
         
                     updateCollection(MAIN_PLACES, mainPlaces);
         
@@ -505,7 +498,6 @@ function AccountInfo() {
                     setSubPlacesLoaded(false);
                     let subPlaces = [];
                     subPlaces = await getSubPlacesPerMainPlace(data.provincialCode, data.municipalityCode, data.mainPlaceCode);
-                    subPlaces = subPlaces.map(doc=> ({...doc, sortField: doc.name})); // add sort field.
                     updateCollection(SUB_PLACES, subPlaces);
                     
                     // Set the currently selected subPlace
@@ -707,19 +699,19 @@ function AccountInfo() {
                         }
                     );
                     setEditableFields({});
-                    setUpdateMode(true);                    
+                    setUpdateMode(true);                                               
+                    setLoadingMessage(null);
                 })
-              .catch(error=> {
-                    toast.error(error + '. Please try again or contact Support.', toastifyTheme);
+              .catch(error=> {                           
+                    setLoadingMessage(null);
+                    toast.error('An error occurred. Please try again or contact Support.', toastifyTheme);
                     errorFound = true;
                 });
 
         setProvincesKey(provincesKey + keyStep);
         setMunicipalitiesKey(municipalitiesKey + keyStep);
         setMainPlacesKey(mainPlacesKey + keyStep);
-        setSubPlacesKey(subPlacesKey + keyStep);
-                
-        setLoadingMessage(null);
+        setSubPlacesKey(subPlacesKey + keyStep);         
 
         if (errorFound === false)
             toast.success('Account Personal Details updated!', toastifyTheme);
@@ -750,17 +742,18 @@ function AccountInfo() {
 
                 if (!collectionExists(PROVINCES)) {
                     provinces = await getAllProvinces();
-                    provinces = provinces.map(province=> ({...province, sortField: province.name}));
-                    addCollection(PROVINCES, provinces, 1); // 1 - only item can be selected.
+                    provinces = provinces.map(province=> ({...province}));
+                    const sortFields = ['name asc'];
+                    addCollection(PROVINCES, provinces, 1, false, ...sortFields); // 1 - only item can be selected.
 
                     /* Municipalities initialised as empty. To be re-loaded per selected province, when user selects the province */
-                    addCollection(MUNICIPALITIES, [], 1);
+                    addCollection(MUNICIPALITIES, [], 1, false, ...sortFields);
 
                     /* Main places initialised as empty. To be re-loaded per selected municipality. */
-                    addCollection(MAIN_PLACES, [], 1);
+                    addCollection(MAIN_PLACES, [], 1, false, ...sortFields);
 
                     /* Sub-places initialised as empty. To be re-loaded per selected main place. */
-                    addCollection(SUB_PLACES, [], 1);
+                    addCollection(SUB_PLACES, [], 1, false, ...sortFields);
                 }
             } catch(error) {
                 toast.error(error, toastifyTheme);

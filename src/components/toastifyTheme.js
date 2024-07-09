@@ -2,8 +2,9 @@
 // Purpose: provide properties to the toaster.
 // Source: https://fkhadra.github.io/react-toastify/introduction/
 /**
- * Date      Dev   Description
- 2023/11/21  ITA   
+ * Date      Dev   Version Description
+ 2023/11/21  ITA   1.00    Settings for the appearance of the toast.
+ 2024/07/09  ITA   1.01    Rectified the patch description.
  */
 
 const toastifyTheme = {

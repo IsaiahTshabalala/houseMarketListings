@@ -6,6 +6,9 @@
  * Date         Dev  Version  Description
  * 2024/01/11   ITA  1.00     Genesis.
  * 2024/05/01   ITA  1.01     Add header comment. Update the paths.
+ * 2024/07/04   ITA  1.02     Remove the use of getSortedObject function, since the equality tests in the Collections provider now use proper comparison functions,
+ *                            and not the comparison of JSON stringified objects.
+ *                            In keeping with the improved sorting mechanism in the CollectionsProvider, eliminate the sortField and instead use place names for sorting.
  */
 import { useEffect, useState, useContext, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -20,9 +23,7 @@ import Dropdown from './Dropdown';
 import { getAllProvinces, getMunicipalitiesOfTheProvinces, getMainPlacesOfTheMunicipalities,
          transactionTypes, propertyTypes, numberOfBedrooms, PROVINCES, MUNICIPALITIES,
          MAIN_PLACES, TRANSACTION_TYPES, PROPERTY_TYPES, NUMBER_OF_BEDROOMS, 
-         PRICE_FROM, PRICE_TO, getListingsQueryObject, QUERY_TIME,
-         GET_LISTINGS_QUERY_OBJECT } from '../utilityFunctions/firestoreComms';
-import { getSortedObject } from '../utilityFunctions/commonFunctions';
+         PRICE_FROM, PRICE_TO, getListingsQueryObject, GET_LISTINGS_QUERY_OBJECT } from '../utilityFunctions/firestoreComms';
 import Loader from './Loader';
 import toastifyTheme from './toastifyTheme';
 const loDash = require('lodash');
@@ -36,7 +37,7 @@ function SearchListings() {
             getSelected, setSelected, collectionExists } = useContext(collectionsContext);
     const { addVar, updateVar, varExists, getVar } = useContext(sharedVarsContext);
 
-    /**Set to false while the data of the respective dropdowns is being loaded, set to false thereafter. */
+    /**Set to false while the data of the respective dropdowns is being loaded, set to true thereafter. */
     const [transactionTypesLoaded, setTransactionTypesLoaded] = useState(true);
     const [propertyTypesLoaded, setPropertyTypesLoaded] = useState(true);
     const [numberOfBedroomsLoaded, setNumberOfBedroomsLoaded] = useState(true);
@@ -76,8 +77,8 @@ function SearchListings() {
         validate();
     } // function handleChange(e) {
 
+    /** Validate user input.*/
     function validate() {
-    // Validate user input.
         const errorList = {};
         try {
             // Check whether any provinces were selected.
@@ -133,8 +134,8 @@ function SearchListings() {
         }
     } // function validate() {
 
+    /** Update the municipalities and their respective main places in keeping up with the currently selected provinces.*/
     async function provincesSelected() {
-    // Update the municipalities and their respective main places in keeping up with the currently selected provinces.
         try {
             // Get the currently selected provinces.
             let selectedProvinces = getSelected(PROVINCES);
@@ -175,12 +176,11 @@ function SearchListings() {
                             // All the  result array objects have the same provincialCode.
                             const aProvince = newProvinces.find(province=> province.code === municipalitiesResult[0].provincialCode);
                             municipalitiesResult = municipalitiesResult.map(item=> {
-                                // Add a sort field to the results.
-                                const sortField = `${aProvince.name}_${item.name}`; // provincialName_municipalityName.
-                                return getSortedObject({
+                                // Add provinceName and municipalityName as sort fields.
+                                return  {
                                             ...item,
-                                            sortField
-                                        });
+                                            provinceName: aProvince.name
+                                        };
                             });
                             newMunicipalities = [...newMunicipalities, ...municipalitiesResult];
                         }
@@ -244,7 +244,7 @@ function SearchListings() {
                                 let mainPlacesResult = result.value;
 
                                 if (mainPlacesResult.length > 0) {
-                                        // Todo: add a sortField to each result array element.
+                                    // Todo: add a sortField to each result array element.
                                     // The main place objects of a result.value array have the same provincialCode and municipalityCode
                                     const aMunicipality = newMunicipalities.find(municipality=> {
                                         return municipality.code === mainPlacesResult[0].municipalityCode
@@ -257,11 +257,11 @@ function SearchListings() {
             
                                     // Add the sort field each result array element.
                                     mainPlacesResult = mainPlacesResult.map(aMainPlace=> {                                
-                                        const sortField = `${aProvince.name}_${aMunicipality.name}_${aMainPlace.name}`;
-                                        return getSortedObject({
+                                        return {
                                             ...aMainPlace,
-                                            sortField
-                                        });
+                                            provinceName: aProvince.name,
+                                            municipalityName: aMunicipality.name
+                                        };
                                     });
                                     newMainPlaces = [...newMainPlaces, ...mainPlacesResult];  
                                 } // if (mainPlacesResult.length > 0) {                     
@@ -335,12 +335,11 @@ function SearchListings() {
     
             updateVar(PRICE_FROM, Number.parseFloat(priceFrom));
             updateVar(PRICE_TO, Number.parseFloat(priceTo));
-            updateVar(QUERY_TIME, Date.now());
             
             let path = null;
 
-            if (location.pathname === '/search')
-                path = '/search/listings';
+            if (location.pathname === '/search/all')
+                path = '/search/all/listings';
             else if (location.pathname === '/search/offers') 
                 path = '/search/offers/listings';            
 
@@ -361,11 +360,6 @@ function SearchListings() {
 
             firstRenderRef.current = false;
 
-            /** This shared variable will be compared to the searchTime compared with the one in the Listings components.
-             * If the two are not equal, perform the search query as the search parameters may have changed. */
-            if (!varExists(QUERY_TIME))
-                addVar(QUERY_TIME, 0);
-
             try {
                 /* Verify if the collections (used for dropdown data) exist. If not, create them. 
                    Existence of Provinces collection implies that all the other collections exists too, as 
@@ -374,20 +368,19 @@ function SearchListings() {
                     setProvincesLoaded(false);
                     let provinces = [];
                     provinces = await getAllProvinces();
-                    provinces = provinces.map(doc=> (getSortedObject({...doc, sortField: doc.name})));
     
                     /* NB. When setting the number of selections that the user can make (on the multi-selection dropdowns),
                     we had to make sure they are such that they do not exceed the number of disjunction normalisations in
                     the query created by Firestore does not exceed maximum 30. */
-                    addCollection(PROVINCES, provinces, 2);
-                    addCollection(MUNICIPALITIES, [], 3);
-                    addCollection(MAIN_PLACES, [], 3);
+                    addCollection(PROVINCES, provinces, 2, false, 'name asc');
+                    addCollection(MUNICIPALITIES, [], 3, false, 'provinceName asc', 'name asc');
+                    addCollection(MAIN_PLACES, [], 3, false, 'provinceName asc', 'municipalityName asc', 'name asc');
                     setTransactionTypesLoaded(false);
-                    addCollection(TRANSACTION_TYPES, transactionTypes, 2, true); // By true, we tell the collectionsContext to add a Primitive data type collection.
+                    addCollection(TRANSACTION_TYPES, transactionTypes, 2, true, 'asc'); // By true, we tell the collectionsContext to add a Primitive data type collection.
                     setPropertyTypesLoaded(false);
-                    addCollection(PROPERTY_TYPES, propertyTypes, 2, true);
+                    addCollection(PROPERTY_TYPES, propertyTypes, 2, true, 'asc');
                     setNumberOfBedroomsLoaded(false);
-                    addCollection(NUMBER_OF_BEDROOMS, numberOfBedrooms, 3, true);
+                    addCollection(NUMBER_OF_BEDROOMS, numberOfBedrooms, 3, true, 'asc');
                 } // if (!collectionExists(PROVINCES)) {            
             } catch (error) {
                 toast.error(error, toastifyTheme);

@@ -6,7 +6,7 @@
  * 2024/05/09   ITA  1.00     Genesis
  */
 import { getDocs, onSnapshot } from 'firebase/firestore';
-import { QueryTypes, getReportsToReviewQuery, REPORTS, LAST_DOC,
+import { FetchTypes, getReportsToReviewQuery, REPORTS,
          PROVINCES, MUNICIPALITIES, MAIN_PLACES, SUB_PLACES, getDocumentSnapshot,
          CLICKED_LISTING, getProvince, getMunicipality, getMainPlace, getSubPlace } from '../utilityFunctions/firestoreComms';
 import { sharedVarsContext } from '../hooks/SharedVarsProvider';
@@ -16,22 +16,25 @@ import { toast, ToastContainer } from 'react-toastify';
 import toastifyTheme from './toastifyTheme';
 import Loader from './Loader';
 import { w3ThemeD5, selectedItemStyle } from './moreStyles';
-import { getSortedObject } from '../utilityFunctions/commonFunctions';
+import { binarySearchObj, objCompare, getObjArrayWithNoDuplicates } from '../utilityFunctions/commonFunctions';
 
 function Reports() {
     const navigate = useNavigate();
     const firstRenderRef = useRef(true); // To indicate if the component is rendering for the first time.
-    const [reports, setReports] = useState([]);
-    const [reportsKey, setReportsKey] = useState(1);
+    const reportsRef = useRef([]);
+    const [reportsToDisplay, setReportsToDisplay] = useState([]);
     const [loadingMessage, setLoadingMessage] = useState(null);
     const {varExists, addVar, getVar, updateVar} = useContext(sharedVarsContext);
     const lastDocRef = useRef(null); // The position after which to perform the next fetching of data from Firestore.
-    const numDocsToListenToRef = useRef(0);
-    const unsubscribeRef = useRef(null); // A listener for changes in Firestore, to the documents that were fetched.
+                                     // Listening also to happen from first report doc up to this doc.
+    const unSubscribeRef = useRef(null); // A listener for changes in Firestore, to the documents that were fetched.
     const [numPages, setNumPages] = useState(1);
     const [pageNum, setPageNum] = useState(1);
     const numDocsToFetch = 3;
-    const listingIdsRef = useRef([]);
+    const sortFields = ['listingId asc', 'reportId asc'];  // Fetched listings are expected to be sorted by listingId, then reportId.
+    const repsToDisplaySortFields = ['listingId asc'];
+    const PAGE_NUM = 'pageNumber';
+    const REPORTS_TO_DISPLAY = 'reportsToDisplay';
 
     function generateSeqArray(pageCount) {
         const anArray = [];
@@ -40,7 +43,7 @@ function Reports() {
 
         return anArray;
     } // function generateSeqArray(numPages) {
-    
+
     function setPagination(numDisplay) {
         let pageCount = Math.ceil(numDisplay * 1.00 / numDocsToFetch);
         setNumPages(pageCount);
@@ -49,82 +52,125 @@ function Reports() {
             setPageNum(pageCount);
     } // function setPagination(numDisplay) {
 
-    function createQueryObject(queryType) {
+    function createQueryObject(fetchType = null) {
         let qry = null;
-        switch (queryType) {
-            case QueryTypes.START_FROM_BEGINNING:
-                qry = getReportsToReviewQuery(numDocsToListenToRef.current);
-                break;
-            case QueryTypes.START_AFTER_LAST_DOC:
-                qry = getReportsToReviewQuery(numDocsToFetch, lastDocRef.current);        
-            default:
-                break;
-        }        
+        if (fetchType === FetchTypes.END_AT_DOC)         
+            qry = getReportsToReviewQuery(null, lastDocRef.current, fetchType);
+        else if (fetchType === FetchTypes.START_AFTER_DOC)
+            qry = getReportsToReviewQuery(numDocsToFetch, lastDocRef.current, fetchType);        
+        else if (fetchType === null)
+            qry = getReportsToReviewQuery(numDocsToFetch);
         return qry;
-    } // function createQueryObject(queryType) {
+    } // function createQueryObject(fetchType) {
 
     async function load() {
         await loadReports();
         await recreateQueryListener();
     } // async function load()
 
+    /* Create a listener to listen for listing updates in Firestore.
+        First unSubscribe to the current listener if it exists.
+    */
     async function recreateQueryListener() {
-        /* Create a listener to listen for listing updates in Firestore.
-           First unsubscribe to the current listener if it exists.
-        */
-        unsubScribe();
+        unSubscribe();
 
-        if (numDocsToListenToRef.current <= 0) // No reports so far. Nothing to listen to.
+        if (lastDocRef.current === null) // No documents to listen to.
             return;
 
-        const qry = createQueryObject(QueryTypes.START_FROM_BEGINNING);
-        unsubscribeRef.current = onSnapshot(
+        const qry = createQueryObject(FetchTypes.START_FROM_BEGINNING);
+        unSubscribeRef.current = onSnapshot(
                                     qry, 
-                                    snapshot=> {
+                                    async snapshot=> {
                                         setLoadingMessage('Loading reports. Please wait ...');
                                         let theReports = [...getVar(REPORTS)];
+                                        let repsToDisplay = [...getVar(REPORTS_TO_DISPLAY)];
                                         const docChanges = snapshot.docChanges();
                                         for (const idx in docChanges) {
                                             const change = docChanges[idx];
                                             const aReport = change.doc.data();
                                             aReport.reportId = change.doc.id;
-                                            const index = theReports.findIndex(doc=> doc.reportId === aReport.reportId);
+                                            
+                                            /* Find in theReports the position of the report doc that changed, or the position where the new report doc
+                                                should be, or where a report doc should be removed. Update the reportsToDisplay accordingly.
+                                            */
+                                            const index = binarySearchObj(theReports, aReport, 0, ...sortFields); // sortFields = ['listingId asc', 'reportId asc']
+                                            let comparison = null;
+                                            if (index >= 0) // non-empty array.
+                                                comparison = objCompare(theReports[index], aReport, ...sortFields);
+
+                                            const index2 = binarySearchObj(repsToDisplay, aReport, 0, ...repsToDisplaySortFields); // repsToDisplaySortFields = ['listingId']
+                                            let comparison2 = null;
+                                            if (index >= 0) // non-empty array.
+                                                comparison2 = objCompare(repsToDisplay[index2], aReport, ...repsToDisplaySortFields);
 
                                             switch (change.type) {
                                                 case 'added': case 'modified':
-                                                    if (index >= 0)
-                                                        theReports[index] = {...theReports[index], ...aReport};
-                                                    else {
+                                                    if (index < 0)
                                                         theReports.push(aReport);
-                                                    } // else
+                                                    else if (comparison === 0) { // aReport found in theReports. Update at index.
+                                                        theReports[index] = aReport;
+                                                    } // if (comparison === 0) {
+                                                    else if (comparison < 0) { // New report insert at the right position in theReports, in accordance with sort order.
+
+                                                        // Place after theReports[index]
+                                                        if (index + 1 <= theReports.length - 1)
+                                                            theReports.splice(index + 1, 0, aReport);
+                                                        else
+                                                            theReports.push(aReport);
+                                                    }
+                                                    else { // comparison > 0
+                                                        // Place before theReports[index]
+                                                        theReports.splice(index, 0, aReport);
+                                                    }
+
+                                                    if (index2 < 0)
+                                                        repsToDisplay.push(aReport);
+                                                    else if (comparison2 < 0) {
+                                                        if (index2 + 1 < repsToDisplay.length)
+                                                            repsToDisplay.splice(index2 + 1, 0, aReport);
+                                                        else
+                                                            repsToDisplay.push(aReport);
+                                                    } // if (comparison2 < 0) {
+                                                    else if (comparison2 > 0) {
+                                                        repsToDisplay.splice(index2, 0, aReport);
+                                                    } // else if (comparison2 > 0) {
                                                     break;
                                                 case 'removed':
-                                                    if (index >= 0)
+                                                    if (comparison === 0)
                                                         theReports.splice(index, 1);
+
+                                                    if (comparison2 === 0) {
+                                                        /**Remove the report from repsToDisplay as well, and replace it with
+                                                         * another report of same listingId, if available. */
+                                                        const index3 = binarySearchObj(theReports, aReport, 0, ...repsToDisplaySortFields);
+                                                        if (index3 < 0) {
+                                                            // Nothing to do.
+                                                        }
+                                                        if (objCompare(theReports[index3], aReport, ...repsToDisplaySortFields) === 0)
+                                                            repsToDisplay[index2] = aReport; // replacement.
+                                                        else
+                                                            repsToDisplay.splice(index2, 1);
+                                                    } // if (comparison2 === 0) {
                                                     break;
                                                 default:
                                                     break;
                                             } // switch(change.type)
                                         } // for (const idx in docChanges) {
-                                        
-                                        listingIdsRef.current = [];
-                                        theReports = theReports.map(report=> {
-                                            const idx = listingIdsRef.current.findIndex(listingId=> listingId === report.listingId);
-                                            if (idx < 0)
-                                                listingIdsRef.current.push(report.listingId);
-                                            report.display = (idx < 0);
-                                            return report;
-                                        });
 
-                                        numDocsToListenToRef.current = theReports.length;
-                                        setReports([...theReports]);
+                                        setReportsToDisplay(repsToDisplay);
                                         updateVar(REPORTS, [...theReports]);
-                                        setPagination(listingIdsRef.current.length);
+                                        updateVar(REPORTS_TO_DISPLAY, [...repsToDisplay]);
+                                        reportsRef.current = [...theReports];
+                                        
+                                        setReportsToDisplay(repsToDisplay);                                        
+                                        setPagination(repsToDisplay.length);
+
+                                        lastDocRef.current = null;
+                                        if (theReports.length > 0) {
+                                            const lastReport = theReports[theReports.length - 1];
+                                            lastDocRef.current = await getDocumentSnapshot(`/listings/${lastReport.listingId}/reports/${lastReport.reportId}`);
+                                        } // if (theReports.length > 0) {
                                         setLoadingMessage(null);
-                                        if (theReports.length === 1) {
-                                            console.log(theReports);
-                                            setReportsKey(reportsKey + 1);
-                                        }
                                     }, // snapshot=> {
                                     error=> {
                                     }
@@ -134,21 +180,23 @@ function Reports() {
     async function loadReports() {
         try {
             setLoadingMessage('Loading reports. Please wait ...');
-            const theReports = [];
+            const theReports = [...reportsRef.current];
+            const repsToDisplay = [...reportsToDisplay];
             let counter = 0;
-            let snapshotDocs = null;
-
             do {
-                const qry = createQueryObject(QueryTypes.START_AFTER_LAST_DOC);
+                let qry;
+                if (lastDocRef.current === null)
+                    qry = createQueryObject();
+                else
+                    qry = createQueryObject(FetchTypes.START_AFTER_DOC);
+
                 const snapshot = await getDocs(qry);
                 const snapshotDocs = snapshot.docs;
     
                 if (snapshotDocs.length === 0)
                     break;
     
-                numDocsToListenToRef.current += snapshotDocs.length;
                 lastDocRef.current = snapshotDocs[snapshotDocs.length - 1];
-                console.log(lastDocRef.current.id);
     
                 for (const idx in snapshotDocs) {
                     const snapshotDoc = snapshotDocs[idx];
@@ -158,29 +206,35 @@ function Reports() {
                     };
 
                     // The aim is to display 1 report per listing.
-                    const index = listingIdsRef.current.findIndex(listingId=> {
-                        return (listingId === theReport.listingId);
-                    });
-
-                    if (index < 0) {
+                    if (repsToDisplay.length === 0) {
+                        repsToDisplay.push(theReport);
                         counter++;
-                        listingIdsRef.current.push(theReport.listingId);
-                    } // if (index < 0) {
-                    
-                    theReport.display = (index < 0);
-                    
-                    if (reports.findIndex(doc=> doc.reportId === theReport.reportId) < 0)
-                        theReports.push(theReport);
-                } // for (const idx in snapshotDocs) {                
-            } while (counter <= numDocsToFetch + 1);
+                    }
+                    else {
+                        const index = binarySearchObj(repsToDisplay, theReport, 0, ...repsToDisplaySortFields);
+                        
+                        const comparison = objCompare(repsToDisplay[index], theReport, ...repsToDisplaySortFields);
+                        if (comparison < 0) {
+                            // Add theReport to the right of repsToDisplay[index]
+                            if (index + 1 < repsToDisplay.length)
+                                repsToDisplay.splice(index + 1, 0, theReport);
+                            else
+                                repsToDisplay.push(theReport);
 
-            if (snapshotDocs !== null && snapshotDocs.length > 0) {
-                const reportData = reports.concat(theReports);
-                setReports(reportData);
-                setPagination(listingIdsRef.current.length);
-                updateVar(REPORTS, reportData);
-                updateVar(LAST_DOC, lastDocRef.current);                
-            }
+                            counter++;
+                        } // if (comparison > 0) {
+                        else if (comparison > 0) { // Place theReport to the left of repsToDisplay[index]
+                            repsToDisplay.splice(index, 0, theReport);
+                            counter++;
+                        } // else if (comparison < 0) {
+                    } // else
+
+                    theReports.push(theReport);
+                } // for (const idx in snapshotDocs) {                
+            } while (counter < numDocsToFetch);
+
+            updateVar(REPORTS_TO_DISPLAY, [...repsToDisplay]);
+            updateVar(REPORTS, [...theReports]);
         } catch (error) {
             console.log(error);
             toast.error('Unable to load reports at this time.', toastifyTheme);
@@ -190,11 +244,12 @@ function Reports() {
         } // finally
     } // async function loadReports() {
 
+    
+    /**To the listing snapshot fields such as provinceName, municipalityName, mainPlaceName, subPlaceName, 
+     * and currentPrice. Also convert Firestore Timestamp dates to Javascript dates. */
     async function transformListingData(listingSnapshot) {
-        /**Add fields such as provinceName, municipalityName, mainPlaceName, subPlaceName, 
-         * and currentPrice. Also convert Firestore Timestamp dates to Javascript dates. */
         const listing = listingSnapshot.data();
-        listing.docId = listingSnapshot.id;
+        listing.listingId = listingSnapshot.id;
         if (!varExists(PROVINCES))
             addVar(PROVINCES, []);
 
@@ -233,7 +288,6 @@ function Reports() {
                 ...municipality,
                 provincialCode: listing.address.provincialCode
             };
-            municipality = getSortedObject(municipality);
             municipalities = [...municipalities, municipality];
         }
         listing.address.municipalityName = municipality.name;
@@ -250,7 +304,6 @@ function Reports() {
                 provincialCode: listing.address.provincialCode,
                 municipalityCode: listing.address.municipalityCode
             };
-            mainPlace = getSortedObject(mainPlace);
             mainPlaces = [...mainPlaces, mainPlace];
         } // if (mainPlace === undefined) {
         listing.address.mainPlaceName = mainPlace.name;
@@ -270,7 +323,6 @@ function Reports() {
                 municipalityCode: listing.address.municipalityCode,
                 mainPlaceCode: listing.address.mainPlaceCode
             };
-            subPlace = getSortedObject(subPlace);
             subPlaces = [...subPlaces, subPlace];
         } // if (subPlace === undefined) {
         listing.address.subPlaceName = subPlace.name;            
@@ -289,7 +341,7 @@ function Reports() {
         updateVar(MUNICIPALITIES, municipalities);
         updateVar(MAIN_PLACES, mainPlaces);
         updateVar(SUB_PLACES, subPlaces);
-        return getSortedObject(listing);
+        return listing;
     } // async function transformListingData(listingSnapshot)
 
     async function goToListing(listingId) {
@@ -298,57 +350,72 @@ function Reports() {
             const snapshot = await getDocumentSnapshot(`/listings/${listingId}`);
             const listing = await transformListingData(snapshot);
             updateVar(CLICKED_LISTING, listing);
+            updateVar(PAGE_NUM, pageNum);
             navigate(`/moderation/${listingId}`);
         } catch (error) {
+            console.log(error);
             setLoadingMessage(null);
             toast.error('This listing may have been flagged already', toastifyTheme);
         } // catch (error)
-    } // function goToListing(listingId) {
+    } // function goToListing(listingId) {    
 
     async function get() {
         if (firstRenderRef.current === true) {
-            firstRenderRef.current = false;       
-
             if (!varExists(REPORTS)) {
                 addVar(REPORTS, []);
-                addVar(LAST_DOC, null); // Last report document fetched from Firestore.       
                 addVar(CLICKED_LISTING, null);
+                addVar(PAGE_NUM, 1);
+                addVar(REPORTS_TO_DISPLAY, []);
                 await load();
             } // if (!varExists(REPORTS)) {
             else {
-                await load();
+                const prevReports = [...getVar(REPORTS)];
+                if (prevReports.length === 0)
+                    await load();
+                else {
+                    reportsRef.current = prevReports;
+                    const repsToDisplay = getObjArrayWithNoDuplicates(prevReports, true, ...repsToDisplaySortFields);
+                    updateVar(REPORTS_TO_DISPLAY, [...repsToDisplay]);
+                    setReportsToDisplay([...repsToDisplay]);                    
+                    setPageNum(getVar(PAGE_NUM));
+                    setPagination(repsToDisplay.length);
+                    
+                    const lastReport = prevReports[prevReports.length - 1];                                                                                  
+                    lastDocRef.current = await getDocumentSnapshot(`/listings/${lastReport.listingId}/reports/${lastReport.reportId}`);
+
+                    recreateQueryListener();
+                } // else
             } // else
+            firstRenderRef.current = false;
         } // if (firstRenderRef.current === true) { 
     } // function get() {
 
     useEffect(() => {
         get();        
 
-        // When this component dismounts, unsubscribe from listening for updates to report documents.
-        return unsubScribe;
+        // When this component dismounts, unSubscribe from listening for updates to report documents.
+        return ()=> {
+            unSubscribe();
+        }
     }, []);
 
-    function unsubScribe() {
-        if (unsubscribeRef.current !== null)
-            unsubscribeRef.current();        
+    function unSubscribe() {
+        if (unSubscribeRef.current !== null)
+            unSubscribeRef.current();        
     }
 
     return (
-        <div className='w3-container' key={reportsKey}>
+        <div className='w3-container'>
             {(loadingMessage === null)?
                 <>
                     <h1>Reports</h1>
                         
                     <div>
-                    {reports.length > 0?
+                    {reportsToDisplay.length > 0?
                         <div className='w3-container'>
                             {
-                                reports
-                                .filter(doc=> (doc.display === true))
-                                .filter((report, index)=> {
-                                    return index >= (pageNum - 1) * numDocsToFetch
-                                            && index < pageNum * numDocsToFetch;
-                                })
+                                reportsToDisplay
+                                .slice((pageNum - 1) * numDocsToFetch, pageNum * numDocsToFetch)
                                 .map(report=> {
                                     return (
                                         <NavLink key={report.reportId} onClick={e=> goToListing(report.listingId)}>
@@ -366,7 +433,7 @@ function Reports() {
                                     {
                                         generateSeqArray(numPages).map(anInteger=>
                                                 (                                               
-                                                    <NavLink  className="w3-button" key={anInteger} style={(pageNum === anInteger)? selectedItemStyle : w3ThemeD5}
+                                                    <NavLink  className="w3-btn w3-round" key={anInteger} style={(pageNum === anInteger)? selectedItemStyle : w3ThemeD5}
                                                         onClick={e=> (pageNum !== anInteger? setPageNum(anInteger) : null)}>
                                                         {anInteger}
                                                     </NavLink>
@@ -379,10 +446,11 @@ function Reports() {
                         :
                         <p>There are no reports at this time.</p>
                     } 
-                    </div>                         
+                    </div>
+
                     {(pageNum === numPages) &&
-                        <p key={reportsKey + 1}> 
-                            <NavLink className="w3-button w3-round w3-theme-d5" onClick={e=> load()}>Load more...</NavLink>
+                        <p> 
+                            <NavLink className="w3-btn w3-round w3-theme-d5" onClick={e=> load()}>Load more...</NavLink>
                         </p>
                     }
                 </>

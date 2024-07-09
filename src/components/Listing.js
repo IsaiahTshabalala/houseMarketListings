@@ -7,6 +7,8 @@
  * 2024/06/18   ITA   1.01     Improve the appearance of the links such that they appear like buttons, using w3.css classes.
  *                             Provide functionality for users to edit their listing. 
  *                             Provide functionality for users to report and flag (moderators only) a listing.
+ * 2024/07/01   ITA   1.02     Rename field docId to listingId. 
+ *                             UserId to be used in sorting the sellers in the sellers collection. Remove sortField.
  */
 import { useParams, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect, useContext, useState } from 'react';
@@ -46,7 +48,7 @@ function Listing() {
         
         try {
             if (!collectionExists('sellers'))
-                addCollection('sellers', []); 
+                addCollection('sellers', [], 'userId asc');
             // Get the listing that was clicked in the listings page.
             if (varExists(CLICKED_LISTING))
                 setListing(getVar(CLICKED_LISTING));
@@ -105,7 +107,6 @@ function Listing() {
                 seller = await getUser(listing.userId);
                 if (seller !== null) {
                     seller.userId = listing.userId;
-                    seller.sortField = seller.userId;  // Add the sortField, a requirement for the collectionsContext to enable sorting.
                     updateCollection('sellers', [...sellers, seller]);
                     listing.seller = seller;
                 } // if (seller !== null)
@@ -274,7 +275,7 @@ function Listing() {
                     </p>
 
                     <h4>
-                        Posted on {listing.dateCreated.toDateString()}.
+                        Posted on {listing.dateCreated.toString()}.
                     </h4>
 
                     {(currentUser !== null) && (currentUser.authCurrentUser?.uid === listing.userId)?
@@ -282,7 +283,7 @@ function Listing() {
                             <h4>
                                 <u>You created this listing.</u>
                             </h4>
-                            {(location.pathname === `/my-profile/listings/${listing.docId}`) &&
+                            {(location.pathname === `/my-profile/listings/${listing.listingId}`) &&
                                 <h4>
                                     <NavLink className='w3-btn w3-round w3-theme-d5' onClick={goToEdit}><BsPencilFill/>Edit this listing</NavLink>
                                 </h4>

@@ -5,22 +5,27 @@
  * Date         Dev  Version  Description
  * 2024/01/27   ITA  1.00     Genesis.
  * 2024/01/28   ITA  1.01     Tweak the useEffect to render the listings consistently. Add pagination.
+ * 2024/07/01   ITA  1.02     QueryTypes object renamed to FetchTypes. Its properties also renamed.
+ *                            Check previous url locations as to whether data must be reloaded when this page loads.
+ *                            In the Firestore listener (onSnapshot), make use of the binarySearchObj function to help
+ *                            add new listings at the right position on the listings array.
+ *                            Remove the use of function getSortedObject. It is not necessary.
  */
-import { useState, useRef, useEffect, useContext, useMemo, memo } from 'react';
+import { useState, useRef, useEffect, useContext, memo } from 'react';
 import { CLICKED_LISTING, GET_LISTINGS_QUERY_OBJECT, PROVINCES, MUNICIPALITIES,
          MAIN_PLACES, SUB_PLACES, TRANSACTION_TYPES, PROPERTY_TYPES,
          NUMBER_OF_BEDROOMS, PRICE_FROM, PRICE_TO,
          getProvince, getMunicipality, getMainPlace, getSubPlace,
-         LISTINGS, QueryTypes, LAST_DOC, NUMBER_OF_DOCS,
-         QUERY_TIME} from '../utilityFunctions/firestoreComms';
+         LISTINGS, FetchTypes, getDocumentSnapshot} from '../utilityFunctions/firestoreComms';
 import { onSnapshot, getDocs } from 'firebase/firestore';
-import { toZarCurrencyFormat, getSortedObject } from '../utilityFunctions/commonFunctions';
+import { toZarCurrencyFormat, binarySearchObj, objCompare } from '../utilityFunctions/commonFunctions';
 import { sharedVarsContext } from '../hooks/SharedVarsProvider';
 import { FaBed, FaBath, FaRulerCombined, FaCar, FaLandmark } from "react-icons/fa";
 import { GiHomeGarage } from "react-icons/gi";
 import { NavLink, useNavigate, useLocation, useParams } from 'react-router-dom';
 import Loader from './Loader';
 import { userContext } from '../hooks/UserProvider';
+import { locationsContext } from '../hooks/LocationsProvider';
 import { w3ThemeD5, selectedItemStyle } from './moreStyles.js';
 
 function Listings() {
@@ -30,44 +35,56 @@ function Listings() {
     const [listingsLoaded, setListingsLoaded] = useState(true);
     const firstRenderRef = useRef(true);
     
-    const lastDocRef = useRef(null); /**The last fetched document from Firestore. The position after which to Fetch next batch of data.*/
+    const lastDocRef = useRef(null); /**The last fetched document from Firestore.*/
     const unsubscribeRef = useRef(null);  /**Will store an object to listen to Firestore fetched documents and update should there
-                                             be changes to those documents in Firestore.*/
-    const numDocsToListenToRef = useRef(0);
+                                             be changes to those documents in Firestore.*/    
     const navigate = useNavigate();
+    const {getLocations} = useContext(locationsContext); // Get the recent urls that the user browsed including the current.
     const location = useLocation();
     const params = useParams();
     const numDocsToFetch = 3;
-    const queryTimeRef = useRef(0);
     const [numPages, setNumPages] = useState(1);
     const [pageNum, setPageNum] = useState(1);
+    const currLocation = location.pathname;
+    const PAGE_NUM = 'pageNumber';
 
-    const backTo = useMemo(()=> {        
+    const sortFields = (()=> {
+        if  (currLocation === '/search/all/listings'
+            || currLocation === '/search/offers/listings'
+            || currLocation.startsWith('/explore/'))
+            return ['listingId asc'];  // Fetched listings expected to be sorted by listingId.
+        else if (currLocation === '/my-profile/listings')
+            return ['dateCreated desc', 'listingId desc']; // Fetched listings expected to be sorted by dateCreated, then listingId.
+        else
+            return [];
+    })();
+
+    const backTo = (()=> {
         let returnTo = {
             link: '#',
             text: ''
         };
 
-        if  (location.pathname === '/search/listings') {
+        if (currLocation === '/search/all/listings') {
             returnTo = {
                 link: '/search',
                 text: 'Back to Search All Listings'
             };
         }
-        else if (location.pathname === '/search/offers/listings') {
+        else if (currLocation === '/search/offers/listings') {
             returnTo = {
                 link: '/search/offers',
                 text: 'Back to Search for Offers'
             };
         }
-        else if (location.pathname ===`/explore/${params.provincialCode}/${params.municipalityCode}/${params.mainPlaceCode}`) {
+        else if (currLocation === `/explore/${params.provincialCode}/${params.municipalityCode}/${params.mainPlaceCode}`) {
             returnTo = {
                 link: `/explore/${params.provincialCode}`,
                 text: 'Back to Explore Listings'
             };
         }
         return returnTo;
-    }, []);
+    })();
 
     function setPagination(numListings) {
         let pageCount = Math.ceil(numListings * 1.00 / numDocsToFetch);
@@ -91,21 +108,25 @@ function Listings() {
             return;
 
         updateVar(CLICKED_LISTING, listing);
-
-        let path = location.pathname;
-        navigate(`${path}/${listing.docId}`);
+        updateVar(PAGE_NUM, pageNum);
+        navigate(`${currLocation}/${listing.listingId}`);
     } // function goToListing(listing) {
 
-    async function createQuery(queryType) {
+    async function createQuery(fetchType = null) {
+        const location = getLocations()[0]; // Current location (url)
         let qry = null;
         const functionGetQueryObject = getVar(GET_LISTINGS_QUERY_OBJECT);
-        if (location.pathname === `/my-profile/listings`) {
-            if (queryType === QueryTypes.START_AFTER_LAST_DOC)
-                qry = functionGetQueryObject(currentUser.authCurrentUser.uid, numDocsToFetch, lastDocRef.current);
-            else if (queryType === QueryTypes.START_FROM_BEGINNING)
-                qry = functionGetQueryObject(currentUser.authCurrentUser.uid, numDocsToListenToRef.current);
+
+        if (location === `/my-profile/listings`) {
+            if (fetchType === FetchTypes.START_AFTER_DOC)
+                qry = functionGetQueryObject(currentUser.authCurrentUser.uid, numDocsToFetch,
+                                             lastDocRef.current, fetchType);
+            else if (fetchType === FetchTypes.END_AT_DOC)
+                qry = functionGetQueryObject(currentUser.authCurrentUser.uid, null, lastDocRef.current, fetchType);
+            else
+                qry = functionGetQueryObject(currentUser.authCurrentUser.uid, numDocsToFetch);
         }
-        else if (['/search/listings', '/search/offers/listings'].includes(location.pathname)) {
+        else if (['/search/all/listings', '/search/offers/listings'].includes(location)) {
             /**Shared vars must have been provided via the SearchListings component. */
             if (varExists(MAIN_PLACES)) {
                 const mainPlaces = getVar(MAIN_PLACES);
@@ -113,42 +134,57 @@ function Listings() {
                 const propertyTypes = getVar(PROPERTY_TYPES);
                 const numberOfBedrooms = getVar(NUMBER_OF_BEDROOMS);
 
-                if (location.pathname === '/search/offers/listings') {
-                    if (queryType === QueryTypes.START_AFTER_LAST_DOC) // Create a query for fetching data.
+                if (location === '/search/offers/listings') {
+                    if (fetchType === FetchTypes.START_AFTER_DOC) // Create a query for fetching data.
                         qry = functionGetQueryObject(mainPlaces, transactionTypes, 
                                                      propertyTypes, numberOfBedrooms,
-                                                     true, numDocsToFetch, lastDocRef.current);
-                    else if (queryType === QueryTypes.START_FROM_BEGINNING) // Create a query for listening.                   
+                                                     true, numDocsToFetch, lastDocRef.current, fetchType);
+                    else if (fetchType === FetchTypes.END_AT_DOC) // Create a query for listening.                   
                         qry = functionGetQueryObject(mainPlaces, transactionTypes, 
                                                      propertyTypes, numberOfBedrooms,
-                                                     true, numDocsToListenToRef.current);
-                } // if (location.pathname === '/listings/offers')
+                                                     true, null, lastDocRef.current, fetchType);
+                    else                 
+                        qry = functionGetQueryObject(mainPlaces, transactionTypes, 
+                                                    propertyTypes, numberOfBedrooms,
+                                                    true, numDocsToFetch);
+                        
+                } // if (location === '/listings/offers')
                 else {
-                    if (queryType === QueryTypes.START_AFTER_LAST_DOC)
+                    if (fetchType === FetchTypes.START_AFTER_DOC)
                         qry = functionGetQueryObject(mainPlaces, transactionTypes, 
                                                      propertyTypes, numberOfBedrooms,
-                                                     false, numDocsToFetch, lastDocRef.current);
-                    else if (queryType === QueryTypes.START_FROM_BEGINNING)
+                                                     false, numDocsToFetch, lastDocRef.current, fetchType);
+                    else if (fetchType === FetchTypes.END_AT_DOC)
                         qry = functionGetQueryObject(mainPlaces, transactionTypes, 
                                                      propertyTypes, numberOfBedrooms,
-                                                    false, numDocsToListenToRef.current);                  
+                                                    false, null, lastDocRef.current, fetchType);
+                    else // fetchType === null
+                        qry = functionGetQueryObject(mainPlaces, transactionTypes, 
+                                                    propertyTypes, numberOfBedrooms,
+                                                    false, numDocsToFetch);
+                    
                 } // else
 
             } // if (varExists(MAIN_PLACES))
-        } // else if (['/listings', '/listings/offers'].includes(location.pathname)) {
-        else if (location.pathname.startsWith('/explore/')) {
+        } // else if (['/listings', '/listings/offers'].includes(location)) {
+        else if (location.startsWith('/explore/')) {
             const provincialCode = params.provincialCode;
             const municipalityCode = params.municipalityCode;
             const mainPlaceCode = params.mainPlaceCode;
 
             if (provincialCode !== undefined && municipalityCode !== undefined && mainPlaceCode !== undefined) {
-                if (queryType === QueryTypes.START_AFTER_LAST_DOC)
+                if (fetchType === FetchTypes.START_AFTER_DOC)
                     qry = functionGetQueryObject(provincialCode, municipalityCode, 
-                                                    mainPlaceCode, numDocsToFetch,
-                                                    lastDocRef.current);
-                else if (queryType === QueryTypes.START_FROM_BEGINNING)
+                                                 mainPlaceCode, numDocsToFetch,
+                                                 lastDocRef.current, fetchType);
+                else if (fetchType === FetchTypes.END_AT_DOC)
                     qry = functionGetQueryObject(provincialCode, municipalityCode, 
-                                                    mainPlaceCode, numDocsToListenToRef.current);
+                                                 mainPlaceCode, null,
+                                                 lastDocRef.current, fetchType);
+                else                    
+                    qry = functionGetQueryObject(provincialCode, municipalityCode, 
+                                                 mainPlaceCode, numDocsToFetch,
+                                                 lastDocRef.current, fetchType);
             } // if (provincialCode !== undefined && municipalityCode !== undefined && mainPlaceCode !== undefined ...
         }
         return qry;
@@ -160,10 +196,10 @@ function Listings() {
         if (unsubscribeRef.current !== null)
             unsubscribeRef.current();
 
-        if (numDocsToListenToRef.current <= 0) // No listings so far. Nothing to listen to.
+        if (lastDocRef.current === null) // No listings so far. Nothing to listen to.
             return;
         
-        const qry = await createQuery(QueryTypes.START_FROM_BEGINNING);
+        const qry = await createQuery(FetchTypes.END_AT_DOC);
         let priceFrom = null,
             priceTo = null;
         
@@ -178,19 +214,21 @@ function Listings() {
                                         setListingsLoaded(false);
                                         let theListings = [...getVar(LISTINGS)];
                                         const changes = snapshot.docChanges();
-                                        for (let idx in changes) {
-                                            const change = changes[idx];
-                                            let index = theListings.findIndex(doc=> {
-                                                return doc.docId === change.doc.id;
-                                            });
-                                            let allowed = true;
-                                            
+                                        for (let index1 in changes) {
+                                            const change = changes[index1];
+                                            const aDoc = change.doc.data();
+                                            aDoc.dateCreated = aDoc.dateCreated.toDate();
+                                            aDoc.listingId = change.doc.id;
+                                            const index2 = binarySearchObj(theListings, aDoc, 0, ...sortFields); // sortFields are comparison fields.
+                                            let comparison = objCompare(aDoc, theListings[index2], ...sortFields);
                                             if (change.type === 'removed') {
-                                                if (index >= 0)
-                                                    theListings.splice(index, 1);
+                                                if (comparison === 0) {
+                                                    theListings.splice(index2, 1);                      
+                                                }
                                                 continue;
                                             } // if (change.type === 'removed')
 
+                                            let allowed = true;
                                             const aListing = await transFormListingData(change.doc);
 
                                             // Given the Firestore limitations, the price range filters could not be added to the query.
@@ -199,25 +237,30 @@ function Listings() {
                                                 allowed = (aListing.currentPrice >= priceFrom);
                                             if (priceTo !== null)
                                                 allowed = allowed && (aListing.currentPrice <= priceTo);
+                                            
+                                            // To remove from the listings, those that fall outside the price range.
+                                            if (allowed) {
+                                                if (comparison === 0) // listing exists in theListings array.
+                                                    theListings[index2] = aListing; // listing exists in theListings array, update.
+                                                else if (comparison < 0) // New listing, before theListings[index2]
+                                                        theListings.splice(index2, 0, aListing); // Insert new listing before theListings[index2]
+                                                else { // New listing is after theListings[index2]
+                                                    // Insert after theListings[index2].
+                                                    if (index2 + 1 <= theListings.length - 1)
+                                                        theListings.splice(index2 + 1, 0, aListing);
+                                                    else
+                                                        theListings.push(aListing);
+                                                } // else
+                                            } // if (allowed)
+                                            else if (comparison === 0)
+                                                theListings.splice(index2, 1); // Remove if found in theListings. No longer allowed.
+                                        } // for (let index1 in changes)
 
-                                            switch (change.type) {
-                                                case 'added': case 'modified':
-                                                    // To remove from the listings, those that fall outside the price range.
-                                                    if (allowed) {
-                                                        if (index >= 0)
-                                                            theListings[index] = aListing;
-                                                        else if (location.pathname === '/my-profile/listings')
-                                                            theListings = [aListing, ...theListings];
-                                                        else
-                                                            theListings = [...theListings, aListing];
-                                                    } // if (allowed)
-                                                    else if (index >= 0)
-                                                        theListings.splice(index, 1);
-                                                    break;
-                                                default:
-                                                    break;
-                                            } // switch(change.type)
-                                        } // for (let idx in changes)
+                                        let lastDoc = null;
+                                        if (theListings.length > 0) {
+                                            lastDoc = theListings[theListings.length - 1];
+                                            lastDocRef.current = await getDocumentSnapshot(`/listings/${lastDoc.listingId}`);
+                                        } // if (theListings.length > 0) {
 
                                         setListings(theListings);
                                         setPagination(theListings.length);
@@ -238,14 +281,18 @@ function Listings() {
         setListingsLoaded(false);
         let theListings = [];
         do {
-            const qry = await createQuery(QueryTypes.START_AFTER_LAST_DOC); // await added because createQuery tends to behave asynchronously.
+            let qry;
+            if (lastDocRef.current === null)
+                qry = await createQuery();
+            else
+                qry = await createQuery(FetchTypes.START_AFTER_DOC); // await added because createQuery tends to behave asynchronously.
+            
             const snapshot = await getDocs(qry); // Execute the query and return the results (document snapshots).
 
             if (snapshot.docs.length === 0)
                 break;
             
             lastDocRef.current = snapshot.docs[snapshot.docs.length - 1];
-            numDocsToListenToRef.current += snapshot.docs.length;
             
             let priceFrom = null,
                 priceTo = null;
@@ -258,7 +305,7 @@ function Listings() {
             for (const index in snapshot.docs) {
                 const snapshotDoc = snapshot.docs[index];
 
-                if (listings.findIndex(doc=> (doc.docId === snapshotDoc.id)) >= 0)
+                if (listings.findIndex(doc=> (doc.listingId === snapshotDoc.id)) >= 0)
                     continue;
 
                 const myListing = await transFormListingData(snapshotDoc);
@@ -275,20 +322,17 @@ function Listings() {
                     theListings.push(myListing);
             } // for (const index in snapshotDocs) {
         } while (theListings.length < numDocsToFetch);
+
         const updatedListings = listings.concat(theListings);
         updateVar(LISTINGS, updatedListings);
-        updateVar(LAST_DOC, lastDocRef.current);
-        updateVar(NUMBER_OF_DOCS, numDocsToListenToRef.current);
         setListingsLoaded(true);
-        setListings(updatedListings);
-        setPagination(updatedListings.length);
     } // function loadListings()
 
     async function transFormListingData(listingSnapshot) {
     /**Add fields such as provinceName, municipalityName, mainPlaceName, subPlaceName, 
      * and currentPrice. Also convert Timestamp dates to Javascript dates. */
         const listing = listingSnapshot.data();
-        listing.docId = listingSnapshot.id;
+        listing.listingId = listingSnapshot.id;
         
         if (!varExists(PROVINCES))
             addVar(PROVINCES, []);
@@ -328,7 +372,6 @@ function Listings() {
                 ...municipality,
                 provincialCode: listing.address.provincialCode
             };
-            municipality = getSortedObject(municipality);
             municipalities = [...municipalities, municipality];
         }
         listing.address.municipalityName = municipality.name;
@@ -345,7 +388,6 @@ function Listings() {
                 provincialCode: listing.address.provincialCode,
                 municipalityCode: listing.address.municipalityCode
             };
-            mainPlace = getSortedObject(mainPlace);
             mainPlaces = [...mainPlaces, mainPlace];
         } // if (mainPlace === undefined) {
         listing.address.mainPlaceName = mainPlace.name;
@@ -365,7 +407,6 @@ function Listings() {
                 municipalityCode: listing.address.municipalityCode,
                 mainPlaceCode: listing.address.mainPlaceCode
             };
-            subPlace = getSortedObject(subPlace);
             subPlaces = [...subPlaces, subPlace];
         } // if (subPlace === undefined) {
         listing.address.subPlaceName = subPlace.name;            
@@ -384,62 +425,64 @@ function Listings() {
         updateVar(MUNICIPALITIES, municipalities);
         updateVar(MAIN_PLACES, mainPlaces);
         updateVar(SUB_PLACES, subPlaces);
-        return getSortedObject(listing);
+        return listing;
     } // async function transFormListingData(listing)
+    
+    async function call() {
+        if (!varExists(LISTINGS)) {
+            addVar(LISTINGS, []);
+            addVar(PAGE_NUM, 1);
+            load();
+        } // if (!varExists(NUMBER_OF_DOCS))
+        else { /* Caters for situations where user returns to this page from search or explore pages.
+                  It is required to reload the listings data.
+                */
+            const prevListings = getVar(LISTINGS);
+            const prevLocation = getLocations()[1];
 
-    useEffect(() => {
-        async function call() {
-            if (!varExists(NUMBER_OF_DOCS)) {
-                addVar(NUMBER_OF_DOCS, 0);
-                addVar(LAST_DOC, null);
-                addVar(LISTINGS, []);
-                load();
-            } // if (!varExists(NUMBER_OF_DOCS))
-            else { // Caters for situations where user returns to this page.
-                if (varExists(QUERY_TIME) // This routing came from the Search page. Re-do the querying of data.
-                    && getVar(QUERY_TIME) !== queryTimeRef.current) {
-                    queryTimeRef.current = getVar(QUERY_TIME);
+            if (['/search/all', '/search/offers', '/my-profile/listings', `/explore/${params.provincialCode}`]
+                .includes(prevLocation)) {
+                updateVar(LISTINGS, []);
+                updateVar(PAGE_NUM, 1);
+                load();                    
+            }
+            else {
+                if (prevListings.length === 0) {
+                    updateVar(LISTINGS, []);
+                    updateVar(PAGE_NUM, 1);
                     load();
-                }
-                else { // The routing did not come from the search page. No need to re-do the querying of data.
-                    const prevListings = getVar(LISTINGS);
-                    // In case of /explore/ route.
-                    if (location.pathname.startsWith('/explore/')
-                        && (!(params.provincialCode === prevListings[0].address.provincialCode
-                            && params.municipalityCode === prevListings[0].address.municipalityCode
-                            && params.mainPlaceCode === prevListings[0].address.mainPlaceCode))) {
-                        load();                        
-                    } // if (location.pathname.startsWith('/explore/')) {
-                    else {
-                        if (prevListings.length === 0)
-                            load();
-                        else {
-                            setListings(prevListings);
-                            setPagination(prevListings.length);
-                            numDocsToListenToRef.current = getVar(NUMBER_OF_DOCS);
-                            if (numDocsToListenToRef.current > 0) {
-                                recreateQueryListener();
-                                lastDocRef.current = getVar(LAST_DOC);
-                            } // if (numDocsToListenToRef.current > 0)
-                        }
-                    } // else
+                } // if (prevListings.length === 0) {
+                else {
+                    setListings(prevListings);
+                    setPagination(prevListings.length);
+                    setPageNum(getVar(PAGE_NUM));
+                    let lastDoc = prevListings[prevListings.length - 1];
+                    lastDocRef.current = await getDocumentSnapshot(`/listings/${lastDoc.listingId}`);
 
-                } // else
+                    if (lastDocRef.current !== null)
+                        recreateQueryListener();
+                }
             } // else
 
-            if (!varExists(CLICKED_LISTING))
-                addVar(CLICKED_LISTING, null);
-        } // async function call()   
+        } // else
 
+        if (!varExists(CLICKED_LISTING))
+            addVar(CLICKED_LISTING, null);
+    } // async function call()
+
+    useEffect(() => {
         if (firstRenderRef.current === true) { // This is to prevent multiple re-renders/re-runs of the effect.
             setListingsLoaded(false);
+
             if (!varExists(GET_LISTINGS_QUERY_OBJECT)) {
-                /** Handle situations in which the user did not start from any of the explore pages to get to this page.
+                /** Handle situations in which the user did not start from any of the explore or search pages to get to this page.
                  * In this instance take the user to the appropriate explore page.
                  */
-                if (location.pathname === '/offers/listings')
-                    navigate('/offers');
-                else if (location.pathname.startsWith('/explore/'))
+                if (currLocation === '/search/offers/listings') // currLocation - current location (url).
+                    navigate('/search/offers');
+                else if (currLocation === '/search/all/listings')
+                    navigate('/search/all');
+                else if (currLocation.startsWith('/explore/'))
                     navigate('/');
             }
             else {
@@ -466,15 +509,10 @@ function Listings() {
                             <div style={{overflowX: 'auto'}}>
                                 {
                                     listings
-                                    .filter((listing, index)=> 
-                                        (
-                                            (index >= (pageNum - 1) * numDocsToFetch)
-                                                && (index < (pageNum * numDocsToFetch))
-                                        )
-                                    )
+                                    .slice((pageNum - 1) * numDocsToFetch, pageNum * numDocsToFetch)
                                     .map(listing=> 
                                         (
-                                            <NavLink onClick={e=> goToListing(listing)} key={listing.docId}>
+                                            <NavLink onClick={e=> goToListing(listing)} key={listing.listingId}>
                                                 <div className="w3-card-4 w3-margin-right w3-margin-top w3-margin-bottom"
                                                     style={{marginLeft: '1.25px', width: '250px', height: 'fit-content', display: 'inline-block', verticalAlign: 'top'}}>
                                                     <div className='w3-container w3-center'>
@@ -519,8 +557,8 @@ function Listings() {
                                     {
                                         generateSeqArray(numPages).map(anInteger=>
                                             (
-                                                <NavLink className="w3-button" key={anInteger} style={(pageNum === anInteger)? selectedItemStyle : w3ThemeD5}
-                                                    onClick={e=> (pageNum !== anInteger && setPageNum(anInteger))}>
+                                                <NavLink className="w3-btn w3-round w3-margin-small" key={anInteger} style={(pageNum === anInteger)?
+                                                         selectedItemStyle : w3ThemeD5} onClick={e=> (pageNum !== anInteger && setPageNum(anInteger))}>
                                                     {anInteger}
                                                 </NavLink>
                                             )
@@ -540,7 +578,7 @@ function Listings() {
                             No listings ...
                         </p>
                     }
-                    {location.pathname !== '/my-profile/listings' &&
+                    {currLocation !== '/my-profile/listings' &&
                         <p>
                             <NavLink className="w3-btn w3-round w3-theme-d5"  to={backTo.link}>{backTo.text}</NavLink>
                         </p>

@@ -5,8 +5,9 @@
  * 
  * Date         Dev  Version  Description
  * 2024/05/23   ITA  1.00     Genesis.
+ * 2024/07/09   ITA  1.01     REPORT THIS LISTING option to disappear if the listing has been reported.
  */
-import { useContext, useState } from "react";
+import { useContext, useState, useEffect } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { FaFlag, FaCheck, FaTimes, FaTimesCircle } from 'react-icons/fa';
 import { MdOutlineReportProblem } from "react-icons/md";
@@ -18,24 +19,27 @@ import { REPORTS, CLICKED_LISTING } from "../utilityFunctions/firestoreComms";
 import { sharedVarsContext } from "../hooks/SharedVarsProvider";
 import { userContext } from "../hooks/UserProvider";
 import Loader from "./Loader";
+import { binarySearch, compare } from "../utilityFunctions/commonFunctions";
 
 function ReportOrFlag() {
-    const {varExists, getVar, updateVar} = useContext(sharedVarsContext);
+    const {varExists, getVar, updateVar, addVar} = useContext(sharedVarsContext);
     const {currentUser} = useContext(userContext);
     const [modalOn, setModalOn] = useState(false);
+    const [isReported, setIsReported] = useState(false);
     const reportingReasons = ['Hate speech', 'Threatening / Violence', 'Graphic or Disturbing Content',
-                              'Fraud / Scam', 'Spam',  'Drugs', 'Sex or Adult Content'].sort().concat(['Other']);
+                              'Fraud / Scam', 'Spam',  'Drugs', 'Sex or Adult Content', 'Other'].sort();
     const [reportingReason, setReportingReason] = useState(reportingReasons[0]);
     const [listing, setListing] = useState(getVar(CLICKED_LISTING));    
     const [ flagged, setFlagged] = useState(null);
     const [submitted, setSubmitted] = useState(true);
     const location = useLocation();
+    const REPORTED_LISTINGS = 'reportedListings';
 
     const moderator = useState(()=> {
         return (async ()=> {
             return await isModerator();
         })();
-    }, []); // const moderator = useMemo(()=> {
+    });
 
     async function submitReview(e) {
         let flagListing = null;
@@ -48,14 +52,14 @@ function ReportOrFlag() {
 
         setSubmitted(false);
         let listingUpdate = null;
-
+        
         let listingFlagged = flagged;
         if (listingFlagged === null)
             listingFlagged = listing.flagged;
         if (flagListing !== listingFlagged) {
             // Flag a listing that has a status of flagged = false. Or unflag a listing that has a status of flagged = true.
             try {
-                const docRef = doc(db, `/listings/${listing.docId}`);
+                const docRef = doc(db, `/listings/${listing.listingId}`);
                 await updateDoc(docRef, { flagged: flagListing});
                 toast.success(`${flagListing? 'Listing flagged.' : 'Listing unflagged.'}`, toastifyTheme);
                 listingUpdate = {...listing, flagged: flagListing};
@@ -68,48 +72,60 @@ function ReportOrFlag() {
         } // if (flagListing && listing.flagged === false) {
     
         try {
+            // Slice out the reports on this listing, and update them according to the listing review result.
             let reports = null;
-            if (varExists(REPORTS))
+            if (varExists(REPORTS)) {
+                const comparisonField = 'listingId asc';
                 reports = getVar(REPORTS).filter(report=> {
-                                return report.listingId === listing.docId;
-                            });
+                    return report.listingId === listing.listingId;
+                });
+                let listingReports = reports.filter(report=> report.listingId === listing.listingId);
+                
+                for (const index in listingReports) {
+                    const report = listingReports[index];
+                    const repDocRef = doc(db, `/listings/${listing.listingId}/reports/${report.reportId}`);
 
-            if (reports !== null) {
-                // The were user reports on this listing.
-                for (const index in reports) {
-                    const report = reports[index];
-                    const repDocRef = doc(db, `/listings/${listing.docId}/reports/${report.reportId}`);
-    
                     let outcome = {
                         reviewed: true,
                         reviewDate: Timestamp.fromDate(new Date()),
                         moderatorId: currentUser.authCurrentUser.uid,
                         result: (flagListing? 'flagged' : 'not flagged')
                     };
-    
+
                     report.reviewed = true;
                     await updateDoc(repDocRef, outcome);
-                } // for (const index in reports) {
-                
-                if (reports.length > 0) {
-                    toast.success('Review completed!', toastifyTheme);
-                } // if (reports.length > 0) {
-                reports = getVar(REPORTS);
-                updateVar(REPORTS, reports.filter(report=> (report.listingId !== listing.docId)));                
-            } // if (reports !== null) {
+                } // for (const next in listingReports) {                
+
+                if (listingReports.length > 0) {
+                    toast.success('Review submitted!', toastifyTheme);
+                    updateVar(REPORTS, reports.filter(report=> (report.listingId !== listing.listingId)));
+                } // if (listingReports.length > 0) {
+            }
         } catch (error) {
             console.log(error);
-        }
-        
+            toast.error('Submission of review encountered some problems. Please try again.', toastifyTheme);
+        } //  catch (error) {
+
         setFlagged(flagListing);
         setSubmitted(true);
     } // async function submitReview() {
+
+    useEffect(()=> {
+        if (!varExists(REPORTED_LISTINGS)) {
+            addVar(REPORTED_LISTINGS, []);
+        } // if (!varExists(REPORTED_LISTINGS)) {
+        else {
+            const repListings = [...getVar(REPORTED_LISTINGS)];
+            const index = repListings.findIndex(repListing=> (repListing === listing.listingId));
+            setIsReported(index >= 0); // The listing has been reported.
+        } // else
+    }, []); // useEffect(()=> { 
 
     async function submitReport() {
         setModalOn(false);
         setSubmitted(false);
         const reportData = {
-            listingId: listing.docId,
+            listingId: listing.listingId,
             reason: reportingReason, 
             reviewed: false
         };
@@ -117,9 +133,30 @@ function ReportOrFlag() {
         if (currentUser?.authCurrentUser?.uid !== undefined)
             reportData.userId = currentUser?.authCurrentUser?.uid;
 
-        const docRef = collection(db, `/listings/${listing.docId}/reports/`);
+        const docRef = collection(db, `/listings/${listing.listingId}/reports/`);
         try {
             await addDoc(docRef, reportData);
+            const repListings = [...getVar(REPORTED_LISTINGS)];
+            const index = binarySearch(repListings, listing.listingId, 0, 'asc');
+            let comparison = null;
+    
+            if (index >= 0) {
+                comparison = compare(repListings[index], listing.listingId, 'asc');
+                if (comparison < 0) // Insert to the left of repListings[index]
+                    repListings.splice(index, 0, listing.listingId);
+                else if (comparison > 0) {  // Insert to the right of repListings[index]
+                    if (index + 1 < repListings.length)
+                        repListings.splice(index + 1, 0, listing.listingId);
+                    else
+                        repListings.push(listing.listingId);
+                } // else if (comparison > 0)
+            } // if (index >= 0) {
+            else
+                repListings.push(listing.listingId);
+    
+            setIsReported(true);            
+            updateVar(REPORTED_LISTINGS, repListings);                
+    
             toast.success('Thank you for your report. This listing will be reviewed and appropriate action taken.',
                             toastifyTheme);
         } catch (error) {
@@ -151,7 +188,9 @@ function ReportOrFlag() {
                 </>
                 :
                 <>
-                    {listing.userId !== currentUser?.authCurrentUser?.uid &&
+                    {(listing.userId !== currentUser?.authCurrentUser?.uid
+                        && (!isReported)) &&
+
                         <>
                             {submitted?                                
                                 
@@ -186,7 +225,7 @@ function ReportOrFlag() {
                                 </select>
                                 
                                 <div className='w3-padding'>
-                                    <button className='w3-button w3-btn w3-margin-small w3-theme-d5 w3-round' type='button'
+                                    <button className='w3-btn w3-margin-small w3-theme-d5 w3-round' type='button'
                                             onClick={e=> submitReport()}>Submit Report</button>
                                 </div>
                             </div>
