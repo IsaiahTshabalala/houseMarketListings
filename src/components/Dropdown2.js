@@ -8,6 +8,7 @@
  * Date        Dev    Version Description
  * 2023/12/19  ITA    1.00    Genesis.
  * 2024/06/18  ITA    1.01    Add version number.
+ * 2024/07/14  ITA    1.02    Use the underlying field value (valueName) as the key when displaying collection items.
  */
 import PropTypes from 'prop-types';
 import { useEffect, useState, useContext, memo } from 'react';
@@ -114,14 +115,14 @@ function Dropdown2({label, // label with which to describe the dropdown.
             <div className=' w3-padding-small'>
                 <div className='w3-input-theme-1 w3-dropdown-content w3-bar-block w3-border' id='dropDown' name='dropDown' aria-label={label} 
                          style={w3ShowList}>
-                    {list.map((item, index)=> {
+                    {list.map((item)=> {
                                             return (
-                                                <div className='w3-bar-item w3-button' name={item[keyName]} key={item[keyName]} aria-label={item[keyName]} 
+                                                <div className='w3-bar-item w3-button' name={item[keyName]} key={item[valueName]} aria-label={item[keyName]} 
                                                      onClick={e=> handleItemClick(item)} onFocus={e=> showList()}>
                                                     {item[keyName]}
                                                 </div>
                                             );
-                                        }) // list.map(item=> {
+                                        }) // list.map((item)=> {
                     }
                 </div>
             </div>

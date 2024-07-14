@@ -4,6 +4,7 @@
  * Let the moderator review the report and moderate the listing.
  * Date         Dev  Version  Description
  * 2024/05/09   ITA  1.00     Genesis
+ * 2024/07/14   ITA  1.02     Maximum number of documents fetched from Firestore settable in the environment variables. Default: 10.
  */
 import { getDocs, onSnapshot } from 'firebase/firestore';
 import { FetchTypes, getReportsToReviewQuery, REPORTS,
@@ -29,8 +30,18 @@ function Reports() {
                                      // Listening also to happen from first report doc up to this doc.
     const unSubscribeRef = useRef(null); // A listener for changes in Firestore, to the documents that were fetched.
     const [numPages, setNumPages] = useState(1);
-    const [pageNum, setPageNum] = useState(1);
-    const numDocsToFetch = 3;
+    const [pageNum, setPageNum] = useState(1);    
+    const numDocsToFetch = (()=> {
+        let numDocs = Number.parseInt(process.env.REACT_APP_NUM_DOCS_TO_FETCH);
+
+        if (numDocs === undefined)
+            numDocs = 10;
+        else
+            numDocs = Number.parseInt(numDocs);
+
+        return numDocs;
+    })();
+
     const sortFields = ['listingId asc', 'reportId asc'];  // Fetched listings are expected to be sorted by listingId, then reportId.
     const repsToDisplaySortFields = ['listingId asc'];
     const PAGE_NUM = 'pageNumber';

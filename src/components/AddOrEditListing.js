@@ -10,6 +10,7 @@
  *                           Remove the sortField from the provinces, municipalities, mainPlace and subPlaces collection items.
  *                           Instead, use the name field for sorting. In keeping with improvements to the Collections class.
  *                           Update the listings sharedVar during the addition/update of a listing.
+ * 2024/07/14  ITA  1.03     During the update or creation of a listing. The created listing must be placed at the right position on the sharedVar listings array.
  */
 import { doc, setDoc, Timestamp, deleteField } from 'firebase/firestore';
 import { db, auth } from '../config/appConfig.js';
@@ -950,7 +951,21 @@ function AddOrEditListing() {
         if (varExists(LISTINGS)) { // Update the listings shared var accordingly.
             const theListings = [...getVar(LISTINGS)];
             const index = binarySearchObj(theListings, newData, 0, ...listingSortFields);
-            theListings[index] = newData;
+            if (index < 0) // Empty array.
+                theListings.push(newData);
+            else {
+                const comparison = objCompare(theListings[index], newData, ...listingSortFields);
+                if (comparison < 0) { // Place to the right of theListings[index]
+                    if (index + 1 < theListings.length)
+                        theListings.splice(index + 1, 0, newData);
+                    else
+                        theListings.push(newData);
+                } // if (comparison < 0) {
+                else if (comparison > 0)
+                    theListings.splice(index, 0, newData);
+                else
+                    theListings[index] = newData; // Update the listings at position index.
+            } // else
             updateVar(LISTINGS, theListings);
         } // if (varExists(LISTINGS)) {
     } // function updateClickedListing(data) {

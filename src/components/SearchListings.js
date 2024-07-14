@@ -9,6 +9,7 @@
  * 2024/07/04   ITA  1.02     Remove the use of getSortedObject function, since the equality tests in the Collections provider now use proper comparison functions,
  *                            and not the comparison of JSON stringified objects.
  *                            In keeping with the improved sorting mechanism in the CollectionsProvider, eliminate the sortField and instead use place names for sorting.
+ * 2024/07/14   ITA  1.03     User to select prices via a dropdown, no longer to type the minimum and maximum prices.
  */
 import { useEffect, useState, useContext, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -20,12 +21,14 @@ import { BsCheck } from 'react-icons/bs';
 import MultiSelectionDropdown from './MultiSelectionDropdown';
 import MultiSelectionDropdown2 from './MultiSelectionDropdown2';
 import Dropdown from './Dropdown';
+import Dropdown2 from './Dropdown2';
 import { getAllProvinces, getMunicipalitiesOfTheProvinces, getMainPlacesOfTheMunicipalities,
          transactionTypes, propertyTypes, numberOfBedrooms, PROVINCES, MUNICIPALITIES,
          MAIN_PLACES, TRANSACTION_TYPES, PROPERTY_TYPES, NUMBER_OF_BEDROOMS, 
-         PRICE_FROM, PRICE_TO, getListingsQueryObject, GET_LISTINGS_QUERY_OBJECT } from '../utilityFunctions/firestoreComms';
+         PRICE_FROM, PRICE_TO, PRICE_RANGES, salesPriceRanges, rentalPriceRanges, getListingsQueryObject, GET_LISTINGS_QUERY_OBJECT } from '../utilityFunctions/firestoreComms';
 import Loader from './Loader';
 import toastifyTheme from './toastifyTheme';
+import { toZarCurrencyFormat } from '../utilityFunctions/commonFunctions';
 const loDash = require('lodash');
 
 const keyStep = 0.001;
@@ -36,6 +39,7 @@ function SearchListings() {
     const { addCollection, updateCollection, getCollectionData, 
             getSelected, setSelected, collectionExists } = useContext(collectionsContext);
     const { addVar, updateVar, varExists, getVar } = useContext(sharedVarsContext);
+    const [payRate, setPayRate] = useState('');
 
     /**Set to false while the data of the respective dropdowns is being loaded, set to true thereafter. */
     const [transactionTypesLoaded, setTransactionTypesLoaded] = useState(true);
@@ -45,6 +49,7 @@ function SearchListings() {
     const [municipalitiesLoaded, setMunicipalitiesLoaded] = useState(true);
     const [mainPlacesLoaded, setMainPlacesLoaded] = useState(true);
     const [queryComplete, setQueryComplete] = useState(true);
+    const [priceRangesLoaded, setPriceRangesLoaded] = useState(true);
 
     /* The key variable below are set, in order to cause a re-render whenever the transaction
        types, property types, provinces, municipalities and main places dropdowns need to be reloaded
@@ -58,22 +63,11 @@ function SearchListings() {
     const [transactionTypesKey, setTransactionTypesKey] = useState(Math.random());
     const [propertyTypesKey, setPropertyTypesKey] = useState(Math.random());
     const [numberOfBedroomsKey, setNumberOfBedroomsKey] = useState(Math.random());
-
-    const [priceFrom, setPriceFrom] = useState('');
-    const [priceTo, setPriceTo] = useState('');
-
+    const [priceRangesKey, setPriceRangesKey] = useState(Math.random());
     const [errors, setErrors] = useState({});
     const firstRenderRef = useRef(true);
 
-    function handleChange(e) {        
-        switch(e.target.name) {
-            case 'priceFrom':
-                setPriceFrom(e.target.value);
-                break;
-            case 'priceTo':
-                setPriceTo(e.target.value);
-                break;
-        }
+    function handleChange(e) {
         validate();
     } // function handleChange(e) {
 
@@ -112,19 +106,12 @@ function SearchListings() {
             let selectedNumBedrooms = getSelected(NUMBER_OF_BEDROOMS);
 
             if (selectedNumBedrooms.length === 0)
-            errorList[NUMBER_OF_BEDROOMS] = 'No number of bedrooms selected!'
+                errorList[NUMBER_OF_BEDROOMS] = 'No number of bedrooms selected!'
 
-            // Check whether the minimum price was set.
-            if (!(priceFrom !== '' && Number.parseFloat(priceFrom) >= 0))
-                errorList['priceFrom'] = 'Invalid minimum price!';
-
-            if (!(priceTo !== '' && Number.parseFloat(priceTo) > 0))
-                errorList['priceTo'] = 'Invalid maximum price!';
-            
-            if ((errorList['priceFrom'] === undefined)
-                    && (errorList['priceTo'] === undefined)
-                    && (Number.parseFloat(priceFrom) <= Number.parseFloat(priceTo)) === false)
-                errorList['priceTo'] = 'Maximum price cannot be less than the minimum price.'
+            // Check whether a price range was selected.
+            let selectedPriceRanges = getSelected(PRICE_RANGES);
+            if (selectedPriceRanges.length === 0)
+                errorList[PRICE_RANGES] = 'No price range selected!';
 
             setErrors(errorList);            
             return (Object.keys(errorList).length === 0);
@@ -194,7 +181,6 @@ function SearchListings() {
             updateCollection(MUNICIPALITIES, [...municipalities, ...newMunicipalities]);
             updateCollection(MAIN_PLACES, mainPlaces);
 
-            
         } catch (error) {
             toast.error(error, toastifyTheme);
         } finally {
@@ -283,6 +269,28 @@ function SearchListings() {
             validate();
         } // finally
     } // async function municipalitiesSelected(selectedMunicipalities) {
+    
+    /**Whenever a transaction type (sale/rent) is selected, re-load the approriate price ranges (sale/rent).
+     */
+    function transactionTypeSelected() {
+        const transactionType = getSelected(TRANSACTION_TYPES)[0];
+        let priceRanges;
+        setPriceRangesLoaded(false);
+        if (transactionType === 'Sale') { // Load sales price ranges in the price ranges dropdown.
+            priceRanges = salesPriceRanges;
+            setPayRate('');
+        } // if (transactionType === 'Sale')
+        else if (transactionType === 'Rent') {
+            priceRanges = rentalPriceRanges;
+            setPayRate(' / month');
+        } // else if (transactionType === 'Rent')
+
+        // Create an array of objects, each with a price range and index. So that the index may be used for sorting.
+        priceRanges = priceRanges.map((priceRange, index)=> ({priceRange, index}));
+        updateCollection(PRICE_RANGES, priceRanges);
+        setPriceRangesLoaded(true);
+        setPriceRangesKey(priceRangesKey + keyStep);
+    } // function transactionTypeSelected()
 
     function showErrorIcon(fieldPath) {
         return (
@@ -333,11 +341,21 @@ function SearchListings() {
             selectedNumBedrooms = getSelected(NUMBER_OF_BEDROOMS);
             updateVar(NUMBER_OF_BEDROOMS, selectedNumBedrooms);
     
-            updateVar(PRICE_FROM, Number.parseFloat(priceFrom));
-            updateVar(PRICE_TO, Number.parseFloat(priceTo));
-            
-            let path = null;
+            let selectedPriceRange = getSelected(PRICE_RANGES)[0];
+            selectedPriceRange = selectedPriceRange.priceRange.replace(/[,R, +]/gi, '');
+            selectedPriceRange = selectedPriceRange.split('to');
 
+            let priceFrom = selectedPriceRange[0];
+            priceFrom = Number.parseFloat(priceFrom);
+
+            let priceTo = selectedPriceRange.length > 1? selectedPriceRange[1] : null;
+
+            if (priceTo) // not null
+                priceTo = Number.parseFloat(priceTo);
+
+            updateVar(PRICE_FROM, priceFrom);
+            updateVar(PRICE_TO, priceTo);
+            let path = null;
             if (location.pathname === '/search/all')
                 path = '/search/all/listings';
             else if (location.pathname === '/search/offers') 
@@ -376,12 +394,13 @@ function SearchListings() {
                     addCollection(MUNICIPALITIES, [], 3, false, 'provinceName asc', 'name asc');
                     addCollection(MAIN_PLACES, [], 3, false, 'provinceName asc', 'municipalityName asc', 'name asc');
                     setTransactionTypesLoaded(false);
-                    addCollection(TRANSACTION_TYPES, transactionTypes, 2, true, 'asc'); // By true, we tell the collectionsContext to add a Primitive data type collection.
+                    addCollection(TRANSACTION_TYPES, transactionTypes, 1, true, 'asc'); // By true, we tell the collectionsContext to add a Primitive data type collection.
                     setPropertyTypesLoaded(false);
                     addCollection(PROPERTY_TYPES, propertyTypes, 2, true, 'asc');
                     setNumberOfBedroomsLoaded(false);
                     addCollection(NUMBER_OF_BEDROOMS, numberOfBedrooms, 3, true, 'asc');
-                } // if (!collectionExists(PROVINCES)) {            
+                    addCollection(PRICE_RANGES, [], 1, true, 'index asc');
+                } // if (!collectionExists(PROVINCES)) {
             } catch (error) {
                 toast.error(error, toastifyTheme);
             } finally {
@@ -412,8 +431,8 @@ function SearchListings() {
                     const selectedProvinces = getVar(PROVINCES);
                     if (selectedProvinces !== null) {  // True when user returns to this page from the listings page.
                         setSelected(PROVINCES, selectedProvinces);
-                       await provincesSelected(); // This will effectively retrieve and set the municipalities of the currently selected provinces.
-                        
+                        await provincesSelected(); // This will effectively retrieve and set the municipalities of the currently selected provinces.
+
                         const selectedMunicipalities = getVar(MUNICIPALITIES);
                         if (selectedMunicipalities !== null) {  // True when user returns to this page from the listings page.
                             setSelected(MUNICIPALITIES, selectedMunicipalities);
@@ -426,8 +445,10 @@ function SearchListings() {
                     } // if (selectedProvinces !== null) {
                     
                     const selectedTransactionTypes = getVar(TRANSACTION_TYPES);
-                    if (selectedTransactionTypes !== null)  // True when user returns to this page from the listings page.
-                        setSelected(TRANSACTION_TYPES, selectedTransactionTypes);                    
+                    if (selectedTransactionTypes !== null) { // True when user returns to this page from the listings page.
+                        setSelected(TRANSACTION_TYPES, selectedTransactionTypes);
+                        transactionTypeSelected(); // Set the priceRanges (sales or rental) collection in accordance with the selected transaction type (sale or rental).
+                    }
                     
                     const selectedPropertyTypes =  getVar(PROPERTY_TYPES);
                     if (selectedPropertyTypes !== null) // True when user returns to this page from the listings page.
@@ -438,12 +459,20 @@ function SearchListings() {
                         setSelected(NUMBER_OF_BEDROOMS, selectedNumBedrooms);
     
                     const aPriceFrom = getVar(PRICE_FROM);
-                    if (aPriceFrom !== null) // True when the user returns to this page from the listings page.
-                        setPriceFrom(aPriceFrom);
-    
                     const aPriceTo = getVar(PRICE_TO);
-                    if (aPriceTo !== null) // True when the user returns to this page from the listings page.
-                        setPriceTo(aPriceTo);
+                    const priceRanges = getCollectionData(PRICE_RANGES);
+                    let selectedPriceRange;
+                    if (aPriceFrom && aPriceTo) // Not null and not undefined.
+                        selectedPriceRange = priceRanges.filter(range=> {
+                                                    return range.priceRange.includes(toZarCurrencyFormat(aPriceFrom))
+                                                            && range.priceRange.includes(toZarCurrencyFormat(aPriceTo));
+                                                });
+                    else if (aPriceTo) // Not null and not undefined.
+                        selectedPriceRange = priceRanges.filter(range=> {
+                                                    return range.priceRange.includes(toZarCurrencyFormat(aPriceFrom) + ' +');
+                                                });
+
+                    setSelected(PRICE_RANGES, selectedPriceRange);
                 } // else             
             } catch (error) {
                 toast.error(error, toastifyTheme);
@@ -500,7 +529,8 @@ function SearchListings() {
 
                 {transactionTypesLoaded?
                     <div className='w3-margin-top'>
-                        <Dropdown key={transactionTypesKey} label='* Transaction Types' collectionName={TRANSACTION_TYPES} />
+                        <Dropdown key={transactionTypesKey} label='* Transaction Types' collectionName={TRANSACTION_TYPES}
+                                    onItemSelected={transactionTypeSelected} />
                         {showErrorIcon(TRANSACTION_TYPES)}
                     </div>
                     :
@@ -523,23 +553,16 @@ function SearchListings() {
                     </div>
                     :
                     <Loader message='Loading property types ...' />
-                }                
-
-                <div className='w3-padding-small'>
-                    <label htmlFor='priceFrom'>* Minimum Price</label>
-                    <input name='priceFrom' id='priceFrom' auto-complete='off' required={true} aria-required={true} maxLength={50} minLength={2}
-                             min={0} className='w3-input w3-input-theme-1' type='number' aria-label='Minimum Price'
-                            onChange={e=> handleChange(e)} value={priceFrom}/>
-                    {showErrorIcon('priceFrom')}
-                </div>
+                }
                 
-                <div className='w3-padding-small'>
-                    <label htmlFor='priceTo'>* Maximum Price</label>
-                    <input name='priceTo' id='priceTo' auto-complete='off' required={true} aria-required={true} maxLength={50} minLength={2}
-                            min={0} className='w3-input w3-input-theme-1' type='number' aria-label='Maximum Price'
-                            onChange={e=> handleChange(e)} value={priceTo} />
-                    {showErrorIcon('priceTo')}
-                </div>
+                {priceRangesLoaded?
+                    <div className='w3-margin-top'>
+                        <Dropdown2 key={priceRangesKey} label={`* Price${payRate}`} collectionName={PRICE_RANGES} keyName='priceRange' valueName='priceRange'/>
+                        {showErrorIcon(PRICE_RANGES)}
+                    </div>
+                    :
+                    <Loader message='Loading prices ...' />
+                }
                 
                 <div className='w3-padding'>
                     <button className='w3-btn w3-margin-small w3-theme-d5 w3-round' type='submit'>Search</button>

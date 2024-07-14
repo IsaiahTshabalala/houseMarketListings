@@ -10,6 +10,7 @@
  *                            In the Firestore listener (onSnapshot), make use of the binarySearchObj function to help
  *                            add new listings at the right position on the listings array.
  *                            Remove the use of function getSortedObject. It is not necessary.
+ * 2024/07/14   ITA  1.03     Maximum number of documents fetched from Firestore settable in the environment variables. Default: 10.
  */
 import { useState, useRef, useEffect, useContext, memo } from 'react';
 import { CLICKED_LISTING, GET_LISTINGS_QUERY_OBJECT, PROVINCES, MUNICIPALITIES,
@@ -37,12 +38,20 @@ function Listings() {
     
     const lastDocRef = useRef(null); /**The last fetched document from Firestore.*/
     const unsubscribeRef = useRef(null);  /**Will store an object to listen to Firestore fetched documents and update should there
-                                             be changes to those documents in Firestore.*/    
+                                             be changes to those documents in Firestore.*/
     const navigate = useNavigate();
     const {getLocations} = useContext(locationsContext); // Get the recent urls that the user browsed including the current.
     const location = useLocation();
     const params = useParams();
-    const numDocsToFetch = 3;
+    const numDocsToFetch = (()=> {
+                                let numDocs = Number.parseInt(process.env.REACT_APP_NUM_DOCS_TO_FETCH);
+                                if (numDocs === undefined)
+                                    numDocs = 10;
+                                else
+                                    numDocs = Number.parseInt(numDocs);
+                                return numDocs;
+                            })();
+
     const [numPages, setNumPages] = useState(1);
     const [pageNum, setPageNum] = useState(1);
     const currLocation = location.pathname;
@@ -67,7 +76,7 @@ function Listings() {
 
         if (currLocation === '/search/all/listings') {
             returnTo = {
-                link: '/search',
+                link: '/search/all',
                 text: 'Back to Search All Listings'
             };
         }
@@ -440,7 +449,8 @@ function Listings() {
             const prevListings = getVar(LISTINGS);
             const prevLocation = getLocations()[1];
 
-            if (['/search/all', '/search/offers', '/my-profile/listings', `/explore/${params.provincialCode}`]
+            if (['/search/all', '/search/offers',
+                 `/explore/${params.provincialCode}/${params.municipalityCode}/${params.mainPlaceCode}`]
                 .includes(prevLocation)) {
                 updateVar(LISTINGS, []);
                 updateVar(PAGE_NUM, 1);

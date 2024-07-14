@@ -8,12 +8,14 @@
  *                            Rename QueryTypes to FetchTypes.
  *                            Improve the getListingsQueryObject, getListingsByUserIdQueryObject and getListingsPerMainPlaceQueryObject
  *                            to create a query fetching data after a specified document, or up to a specified document.
+ * 2024/07/14   ITA   1.03    getListingsByUserIdQueryObject: fix a bug. When the FetchType is END_AT_DOC, the query must use endAt, not startAfter.
+ *                            Add priceRanges and PRICE_RANGES, to be usable with dropdowns, to enable users to select the price range of properties sought.
  */
 import { collection, collectionGroup, getDocs, getDoc, doc, query, where, 
          or, and, orderBy, limit, startAfter, endAt, getAggregateFromServer, count, 
          Timestamp} from 'firebase/firestore';
 import { db } from '../config/appConfig.js';
-import { getSortedObject } from './commonFunctions.js';
+import { getSortedObject, toZarCurrencyFormat } from './commonFunctions.js';
 
 export const PROVINCES = 'provinces',
              MUNICIPALITIES = 'municipalities',
@@ -24,6 +26,7 @@ export const PROVINCES = 'provinces',
              NUMBER_OF_BEDROOMS = 'numberOfBedrooms',
              PRICE_FROM = 'priceFrom',
              PRICE_TO = 'priceTo',
+             PRICE_RANGES = 'priceRanges',
              LISTINGS = 'listings',
              CLICKED_LISTING = 'clickedListing',
              GET_LISTINGS_QUERY_OBJECT = 'getListingsQueryObject',
@@ -41,6 +44,29 @@ export const FetchTypes = Object.freeze({
 
 export const NUMBER_OF_DOCS = 'numberOfDocuments', // The current number of documents that are being listened to.
              LAST_DOC = 'lastDocument'; // The last document that was retrieved from Firestore.
+
+/**
+ * Convert an array of prices into price ranges.
+ */
+function getRanges(pricesArray) {
+    const ranges = [];
+
+    for (let index = 0; index < pricesArray.length; index++) {
+        let range = toZarCurrencyFormat(pricesArray[index]);
+        if (index + 1 < pricesArray.length) {
+            range += ' to ' + toZarCurrencyFormat(pricesArray[index + 1]);
+        }
+        else
+            range += ' +';
+        
+        ranges.push(range);
+    }
+    return ranges;
+} // function getRanges(priceArray) {
+
+export const rentalPriceRanges = getRanges([500, 1000, 2000, 3000, 5000, 7000, 9000, 12000, 15000, 30000, 50000]);
+export const salesPriceRanges = getRanges([100000, 200000, 400000, 600000, 800000, 1000000, 1500000, 2500000, 
+                                            4000000, 7500000, 10000000]);
 
 export async function getCollectionDocs(path, withIds = false) {
     const collectionRef = collection(db, path);
@@ -269,7 +295,7 @@ export function getListingsByUserIdQueryObject(userId, numDocs = null, snapshotD
         if (fetchType === FetchTypes.START_AFTER_DOC)
             constraints.push(startAfter(snapshotDoc));
         else if (fetchType === FetchTypes.END_AT_DOC)
-            constraints.push(startAfter(snapshotDoc));
+            constraints.push(endAt(snapshotDoc));
     }
 
     const myQuery = query(

@@ -6,6 +6,7 @@
  * Date        Dev    Version  Description
  * 2024/07/09  ITA    1.02     Rectify the CSS of the ADD NEW LISTING NavLink.
  *                             Remove the listingsKey, it is not used.
+ * 2024/07/11  ITA    1.03     Ensure the guaranteed display of user listings. Even if the user has only 1 listing.
  */
 import { useContext, useEffect, useRef, useState } from 'react';
 import { NavLink } from "react-router-dom";
@@ -21,6 +22,7 @@ import { w3ThemeD5 } from './moreStyles';
 function MyListings() {
     const {varExists, addVar} = useContext(sharedVarsContext);
     const firstRenderRef = useRef(true);
+    const [showListings, setShowListings] = useState(false);
 
     useEffect(()=> {
         (async ()=> {
@@ -32,6 +34,7 @@ function MyListings() {
                 if (!varExists(GET_LISTINGS_QUERY_OBJECT)) {
                     addVar(GET_LISTINGS_QUERY_OBJECT, getListingsByUserIdQueryObject);
                 } // if (!varExists(LISTINGS)) {
+                setShowListings(varExists(GET_LISTINGS_QUERY_OBJECT));
             } catch (error) {
                 console.log(error);
                 toast.error(error, toastifyTheme);
@@ -51,7 +54,7 @@ function MyListings() {
                         Add new listing <IoIosArrowForward/>
                     </NavLink>
 
-                    {varExists(GET_LISTINGS_QUERY_OBJECT) && 
+                    {showListings && 
                         <Listings/>
                     }
 
