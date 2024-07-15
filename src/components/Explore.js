@@ -4,7 +4,7 @@
  * Date         Dev    Version  Description
  * 2024/04/24   ITA    1.00     Genesis.
  * 2024/06/17   ITA    1.01     Leave the Search and Offers links only at the footer of the page.
- * 2024/07/15   ITA    1.02     Update url of Search for all property listings to /search/all.
+ * 2024/07/15   ITA    1.02     In the "Search Property Listings" NavLink, update the url to /search/all, and the caption to "Search all Property Listings."
  */
 import ExploreProvinces from "./ExploreProvinces";
 import { NavLink } from "react-router-dom";
