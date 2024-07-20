@@ -4,6 +4,7 @@
  * Date        Dev  Version  Description
  * 2023/07/27  ITA  1.00     Genesis.
  * 2024/06/19  ITA  1.01     Add header comment.
+ * 2024/07/20  ITA  1.02     Login NavLink to look like a button.
  */
 import { useEffect, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
@@ -57,7 +58,7 @@ function ForgotPassword() {
                 </p>
 
                 <p>
-                    <NavLink className='w3-margin' to='/signin'>Login</NavLink>
+                    <NavLink className='w3-margin w3-btn w3-round w3-theme-d5' to='/signin'>Sign in</NavLink>
                 </p>
                 <ToastContainer/>
             </form>
