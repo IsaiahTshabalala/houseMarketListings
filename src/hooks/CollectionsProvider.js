@@ -1,4 +1,3 @@
-
 /**
  * File: ./src/hooks/CollectionsProvider.js
  * Description:
@@ -14,6 +13,8 @@
  * 2024/05/20  ITA   1.01     Add comment header.
  * 2024/07/03  ITA   1.03     Move descriptions of classes, methods and functions of to the top, to enable them to be displayable on the documentation tips.
  *                            Replace the JSON.stringify comparison and use a proper comparison function instead.
+ * 2024/08/07  ITA   1.04     Collections reference to retain the same reference as collections are added to it. To reduce re-renders of components wrapped in it.
+ *                            Ensure that the maximum number of selections parameter is passed down during the construction of a collection object.
 */
 import { createContext, useRef } from 'react';
 import PropTypes from 'prop-types';
@@ -30,22 +31,16 @@ function CollectionsProvider({children}) {
      * primitiveType must be set to true when adding a collection that is an array of primitive types (e.g. string array),
      * otherwise leave as false when the collection added holds an array of objects.
     */
-    function addCollection(collectionName, data, maxNumSelections = null, primitiveType = false, ...sortFields) { 
+    function addCollection(collectionName, data, maxNumSelections = null, primitiveType = true, ...sortFields) { 
         if (collectionExists(collectionName)) {
             throw new Error(`The collection ${collectionName} already exists.`);
         }  
 
         if (primitiveType) {
-            collectionsRef.current = {
-                ...collectionsRef.current,
-                [collectionName]: new PrimitiveTypeCollection(collectionName, data, maxNumSelections)
-            };
+            collectionsRef.current[collectionName] = new PrimitiveTypeCollection(collectionName, data, maxNumSelections, ...sortFields);
         }
         else {
-            collectionsRef.current = {
-                ...collectionsRef.current,
-                [collectionName]: new Collection(collectionName, data, maxNumSelections, ...sortFields)
-            };
+            collectionsRef.current[collectionName] = new Collection(collectionName, data, maxNumSelections, ...sortFields);
         }
     } // function addCollection(collectionName, data, maxNumSelections = null, primitiveType = false) { 
 
@@ -124,7 +119,7 @@ export { collectionsContext };
  */
 class Collection {
     constructor(pCollectionName, pData, pMaxNumSelections = null, ...pSortFields) {
-        this.sortFields = pSortFields; // e.g. ['surname asc', ''lastName asc']
+        this.sortFields = pSortFields; // e.g. ['surname asc', 'lastName asc']
         this.collectionName = pCollectionName;  // Name of the collection.
         this.selectedItems = []; // An array of objects that were elected from data.
         this.maxNumSelections = pMaxNumSelections;
@@ -152,7 +147,7 @@ class Collection {
         }
         else if (this.sortFields.length === 1) // Primitive type data. Sort order provided.
             return compare(item1, item2, this.sortFields[0]);
-        else if (this.sortFields.length === 0) // Primitive type data. Sort order no provided. Will default to 'asc'
+        else if (this.sortFields.length === 0) // Primitive type data. Sort order not provided. Will default to 'asc'
             return compare(item1, item2);
         else
             throw new Error('Only 1 sort order can be provided for a primitive data type collection.');
@@ -212,8 +207,8 @@ class Collection {
 
 /**Stores an array of related primitive type items for use with single and multi selection dropdown compoents. */
 class PrimitiveTypeCollection extends Collection {
-    constructor(pCollectionName, pData, pMaxNumSelections = null, pSortOrder = 'asc') {
-        super(pCollectionName, pData, pMaxNumSelections = null, pSortOrder);
+    constructor(pCollectionName, pData, pMaxNumSelections = null, ...pSortOrder) {
+        super(pCollectionName, pData, pMaxNumSelections, ...pSortOrder);
     }
 
     comparisonFunction(item1, item2) {
