@@ -9,6 +9,7 @@
  *                             Provide functionality for users to report and flag (moderators only) a listing.
  * 2024/07/01   ITA   1.02     Rename field docId to listingId. 
  *                             UserId to be used in sorting the sellers in the sellers collection. Remove sortField.
+ * 2024/08/07   ITA   1.03     Display the listing's map coordinates.
  */
 import { useParams, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect, useContext, useState } from 'react';
@@ -174,6 +175,10 @@ function Listing() {
                         <span> {listing.address.mainPlaceName}, </span>
                         <span> {listing.address.municipalityName}, </span>
                         <span> {listing.address.provinceName}</span>
+                        <br/>
+                        {'mapCoordinates' in listing &&
+                            <span>Map Coordinates: {`{ ${listing.mapCoordinates.latitude}, ${listing.mapCoordinates.longitude} }`}</span>
+                        }
                     </h5>
                     
                     <p/>

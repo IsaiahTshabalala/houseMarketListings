@@ -11,6 +11,7 @@
  *                           Instead, use the name field for sorting. In keeping with improvements to the Collections class.
  *                           Update the listings sharedVar during the addition/update of a listing.
  * 2024/07/14  ITA  1.03     During the update or creation of a listing. The created listing must be placed at the right position on the sharedVar listings array.
+ * 2024/08/07  ITA  1.04     Allow map coordinates to be populated optionally.
  */
 import { doc, setDoc, Timestamp, deleteField } from 'firebase/firestore';
 import { db, auth } from '../config/appConfig.js';
@@ -652,11 +653,13 @@ function AddOrEditListing() {
                     loDash.set(checkList, 'rates.associationFees.frequency', 'Must be 1 to 12 months');
             } // if (formData.rates.associationFees.amount !== '' || formData.rates.associationFees.frequency !== '') {
             
-            if (!isValidDecimalNumber(formData.mapCoordinates.latitude))
-                loDash.set(checkList, 'mapCoordinates.latitude', 'Invalid latitude');
-    
-            if (!isValidDecimalNumber(formData.mapCoordinates.longitude))
-                loDash.set(checkList, 'mapCoordinates.longitude', 'Invalid longitude');
+            if (formData.mapCoordinates.latitude !== '' || formData.mapCoordinates.longitude !== '') {
+                if (!isValidDecimalNumber(formData.mapCoordinates.latitude))
+                    loDash.set(checkList, 'mapCoordinates.latitude', 'Invalid latitude');
+        
+                if (!isValidDecimalNumber(formData.mapCoordinates.longitude))
+                    loDash.set(checkList, 'mapCoordinates.longitude', 'Invalid longitude');
+            } // if (formData.mapCoordinates.latitude !== '' || formData.mapCoordinates.longitude !== '') {
     
             const numImagesForDeletion = formData.images.filter(image=> {
                 return image.toDelete === true;
@@ -815,8 +818,17 @@ function AddOrEditListing() {
         });
 
         // Convert latitude and longitude to decimal numbers
-        data.mapCoordinates.latitude = Number.parseFloat(data.mapCoordinates.latitude);
-        data.mapCoordinates.longitude = Number.parseFloat(data.mapCoordinates.longitude);
+        if (data.mapCoordinates.latitude === '') { // No map coordinates provided. Testing with only 1 of the map coordinates suffices.
+            if (loDash.get(editableFields, 'mapCoordinates.latitude') !== undefined // This listing previously had map coordinates.
+                && loDash.get(editableFields, 'mapCoordinates.latitude') != '')
+                data.mapCoordinates = deleteField(); // Instruct Firestore to delete mapCoordinates field.
+            else
+                loDash.unset(data, 'mapCoordinates'); // Remove field from listing update.
+        } // if (data.mapCoordinates.latitude === '') {
+        else {
+            data.mapCoordinates.latitude = Number.parseFloat(data.mapCoordinates.latitude);
+            data.mapCoordinates.longitude = Number.parseFloat(data.mapCoordinates.longitude);
+        }
 
         data.userId = auth.currentUser.uid;
 
@@ -1407,7 +1419,7 @@ function AddOrEditListing() {
                             <div className='w3-padding-small side-by-side'>
                                 <label htmlFor='mapCoordinates-latitude'>* Latitude</label>
                                 <input name='mapCoordinates-latitude' autoComplete='off' disabled={isNotEditable('mapCoordinates.latitude')} className='w3-input w3-input-theme-1' type='number' 
-                                        aria-label='Latitude' required={true} aria-required={true} onChange={e=> handleChange(e)} value={formData.mapCoordinates.latitude}  />
+                                        aria-label='Latitude' onChange={e=> handleChange(e)} value={formData.mapCoordinates.latitude}  />
                                 {getEditIcon('mapCoordinates.latitude')}
                                 {showErrorIcon('mapCoordinates.latitude')}
                             </div>
@@ -1415,7 +1427,7 @@ function AddOrEditListing() {
                             <div className='w3-padding-small side-by-side'>
                                 <label htmlFor='longitude'>* Longitude</label>
                                 <input name='mapCoordinates-longitude' autoComplete='off' disabled={isNotEditable('mapCoordinates.longitude')} maxLength={50} minLength={2} className='w3-input w3-input-theme-1' type='number' 
-                                        aria-label='Longitude' required={true} aria-required={true} onChange={e=> handleChange(e)} value={formData.mapCoordinates.longitude} />
+                                        aria-label='Longitude' onChange={e=> handleChange(e)} value={formData.mapCoordinates.longitude} />
                                 {getEditIcon('mapCoordinates.longitude')}
                                 {showErrorIcon('mapCoordinates.longitude')}
                             </div>

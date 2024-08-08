@@ -10,6 +10,7 @@
  *                            and not the comparison of JSON stringified objects.
  *                            In keeping with the improved sorting mechanism in the CollectionsProvider, eliminate the sortField and instead use place names for sorting.
  * 2024/07/14   ITA  1.03     User to select prices via a dropdown, no longer to type the minimum and maximum prices.
+ * 2024/08/07   ITA  1.04     The price ranges collection must be created as an array of objects, each with price range and index as properties.
  */
 import { useEffect, useState, useContext, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -342,7 +343,8 @@ function SearchListings() {
             updateVar(NUMBER_OF_BEDROOMS, selectedNumBedrooms);
     
             let selectedPriceRange = getSelected(PRICE_RANGES)[0];
-            selectedPriceRange = selectedPriceRange.priceRange.replace(/[,R, +]/gi, '');
+            selectedPriceRange = selectedPriceRange.priceRange.replace(/[R+]|\s/gi, '');
+            selectedPriceRange = selectedPriceRange.replace(/,/gi, '.');
             selectedPriceRange = selectedPriceRange.split('to');
 
             let priceFrom = selectedPriceRange[0];
@@ -399,7 +401,7 @@ function SearchListings() {
                     addCollection(PROPERTY_TYPES, propertyTypes, 2, true, 'asc');
                     setNumberOfBedroomsLoaded(false);
                     addCollection(NUMBER_OF_BEDROOMS, numberOfBedrooms, 3, true, 'asc');
-                    addCollection(PRICE_RANGES, [], 1, true, 'index asc');
+                    addCollection(PRICE_RANGES, [], 1, false, 'index asc');
                 } // if (!collectionExists(PROVINCES)) {
             } catch (error) {
                 toast.error(error, toastifyTheme);
@@ -462,12 +464,12 @@ function SearchListings() {
                     const aPriceTo = getVar(PRICE_TO);
                     const priceRanges = getCollectionData(PRICE_RANGES);
                     let selectedPriceRange;
-                    if (aPriceFrom && aPriceTo) // Not null and not undefined.
+                    if (aPriceFrom !== null && aPriceTo !== null)
                         selectedPriceRange = priceRanges.filter(range=> {
                                                     return range.priceRange.includes(toZarCurrencyFormat(aPriceFrom))
                                                             && range.priceRange.includes(toZarCurrencyFormat(aPriceTo));
                                                 });
-                    else if (aPriceTo) // Not null and not undefined.
+                    else if (aPriceFrom !== null) // aPriceTo is null
                         selectedPriceRange = priceRanges.filter(range=> {
                                                     return range.priceRange.includes(toZarCurrencyFormat(aPriceFrom) + ' +');
                                                 });

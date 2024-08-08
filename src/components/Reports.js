@@ -9,7 +9,7 @@
 import { getDocs, onSnapshot } from 'firebase/firestore';
 import { FetchTypes, getReportsToReviewQuery, REPORTS,
          PROVINCES, MUNICIPALITIES, MAIN_PLACES, SUB_PLACES, getDocumentSnapshot,
-         CLICKED_LISTING, getProvince, getMunicipality, getMainPlace, getSubPlace } from '../utilityFunctions/firestoreComms';
+         CLICKED_LISTING, transformListingData } from '../utilityFunctions/firestoreComms';
 import { sharedVarsContext } from '../hooks/SharedVarsProvider';
 import { useEffect, useRef, useState, useContext } from "react";
 import { NavLink, useNavigate } from 'react-router-dom';
@@ -256,110 +256,21 @@ function Reports() {
     } // async function loadReports() {
 
     
-    /**To the listing snapshot fields such as provinceName, municipalityName, mainPlaceName, subPlaceName, 
-     * and currentPrice. Also convert Firestore Timestamp dates to Javascript dates. */
-    async function transformListingData(listingSnapshot) {
-        const listing = listingSnapshot.data();
-        listing.listingId = listingSnapshot.id;
-        if (!varExists(PROVINCES))
-            addVar(PROVINCES, []);
-
-        if (!varExists(MUNICIPALITIES))
-            addVar(MUNICIPALITIES, []);
-
-        if (!varExists(MAIN_PLACES))
-            addVar(MAIN_PLACES, []);
-
-        if (!varExists(SUB_PLACES))
-            addVar(SUB_PLACES, []);
-
-        let provinces = getVar(PROVINCES),
-            municipalities = getVar(MUNICIPALITIES),
-            mainPlaces = getVar(MAIN_PLACES),
-            subPlaces = getVar(SUB_PLACES);
-                
-        let province = provinces.find(prov=> {
-            return prov.code === listing.address.provincialCode;
-        });
-        if (province === undefined) {
-            province = await getProvince(listing.address.provincialCode);
-            provinces.push(province);
-        }
-        listing.address.provinceName = province.name;
-
-        let municipality = municipalities.find(municipal=> {
-            return municipal.provincialCode === listing.address.provincialCode
-                    && municipal.code === listing.address.municipalityCode;
-        });
-        if (municipality === undefined) {
-            // Add the municipality to the listing belongs, if it does not exist.
-            municipality = await getMunicipality(listing.address.provincialCode, 
-                                                    listing.address.municipalityCode);
-            municipality = {
-                ...municipality,
-                provincialCode: listing.address.provincialCode
-            };
-            municipalities = [...municipalities, municipality];
-        }
-        listing.address.municipalityName = municipality.name;
-
-        let mainPlace = mainPlaces.find(place=> {
-            return place.provincialCode === listing.address.provincialCode
-                    && place.municipalityCode === listing.address.municipalityCode
-                    && place.code === listing.address.mainPlaceCode;
-        });
-        if (mainPlace === undefined) {
-            mainPlace = await getMainPlace(listing.address.provincialCode, listing.address.municipalityCode, listing.address.mainPlaceCode);
-            mainPlace = {
-                ...mainPlace,
-                provincialCode: listing.address.provincialCode,
-                municipalityCode: listing.address.municipalityCode
-            };
-            mainPlaces = [...mainPlaces, mainPlace];
-        } // if (mainPlace === undefined) {
-        listing.address.mainPlaceName = mainPlace.name;
-
-        let subPlace = subPlaces.find(place=> {
-            return place.provincialCode === listing.address.provincialCode
-                    && place.municipalityCode === listing.address.municipalityCode
-                    && place.mainPlaceCode === listing.address.mainPlaceCode
-                    && place.code === listing.address.subPlaceCode;
-        });
-        if (subPlace === undefined) {
-            subPlace = await getSubPlace(listing.address.provincialCode, listing.address.municipalityCode,
-                                            listing.address.mainPlaceCode, listing.address.subPlaceCode);
-            subPlace = {
-                ...subPlace,
-                provincialCode: listing.address.provincialCode,
-                municipalityCode: listing.address.municipalityCode,
-                mainPlaceCode: listing.address.mainPlaceCode
-            };
-            subPlaces = [...subPlaces, subPlace];
-        } // if (subPlace === undefined) {
-        listing.address.subPlaceName = subPlace.name;            
-        
-        // Convert the Firestore Timestamp dates to Javascript dates.
-        listing.dateCreated = listing.dateCreated.toDate();
-        if ('offer' in listing.priceInfo)
-            listing.priceInfo.offer.expiryDate = listing.priceInfo.offer.expiryDate.toDate();
-        
-        // Set the current price of the listing.
-        listing.currentPrice = listing.priceInfo.regularPrice;
-        if ('offer' in listing.priceInfo && listing.priceInfo.offer.expiryDate.getTime() >= Date.now())
-            listing.currentPrice = listing.priceInfo.offer.discountedPrice;
-        
-        updateVar(PROVINCES, provinces);
-        updateVar(MUNICIPALITIES, municipalities);
-        updateVar(MAIN_PLACES, mainPlaces);
-        updateVar(SUB_PLACES, subPlaces);
-        return listing;
-    } // async function transformListingData(listingSnapshot)
-
     async function goToListing(listingId) {
         setLoadingMessage('Loading listing. Please wait ...');
         try {
             const snapshot = await getDocumentSnapshot(`/listings/${listingId}`);
-            const listing = await transformListingData(snapshot);
+            
+            if (!varExists(PROVINCES))
+                addVar(PROVINCES, []);
+            if (!varExists(MUNICIPALITIES))
+                addVar(MUNICIPALITIES, []);
+            if (!varExists(MAIN_PLACES))
+                addVar(MAIN_PLACES, []);
+            if (!varExists(SUB_PLACES))
+                addVar(SUB_PLACES, []);
+            const listing = await transformListingData(getVar(PROVINCES), getVar(MUNICIPALITIES),
+                                                        getVar(MAIN_PLACES), getVar(SUB_PLACES), snapshot);
             updateVar(CLICKED_LISTING, listing);
             updateVar(PAGE_NUM, pageNum);
             navigate(`/moderation/${listingId}`);

@@ -10,6 +10,7 @@
  *                            to create a query fetching data after a specified document, or up to a specified document.
  * 2024/07/14   ITA   1.03    getListingsByUserIdQueryObject: fix a bug. When the FetchType is END_AT_DOC, the query must use endAt, not startAfter.
  *                            Add priceRanges and PRICE_RANGES, to be usable with dropdowns, to enable users to select the price range of properties sought.
+ * 2024/08/08   ITA   1.01    Move the function transformListingData to this file, so as to have one centralised instance, instead of same function existing across many components.
  */
 import { collection, collectionGroup, getDocs, getDoc, doc, query, where, 
          or, and, orderBy, limit, startAfter, endAt, getAggregateFromServer, count, 
@@ -44,6 +45,88 @@ export const FetchTypes = Object.freeze({
 
 export const NUMBER_OF_DOCS = 'numberOfDocuments', // The current number of documents that are being listened to.
              LAST_DOC = 'lastDocument'; // The last document that was retrieved from Firestore.
+
+
+/**To a listing record:
+ * Add fields such as provinceName, municipalityName, mainPlaceName, subPlaceName, 
+ * and currentPrice. Also convert Timestamp dates to Javascript dates. */
+export async function transformListingData(provinces, municipalities, mainPlaces, subPlaces, listingSnapshot) {
+    const listing = listingSnapshot.data();
+    listing.listingId = listingSnapshot.id;
+                
+    let province = provinces.find(prov=> {
+        return prov.code === listing.address.provincialCode;
+    });
+    if (province === undefined) {
+        province = await getProvince(listing.address.provincialCode);
+        provinces.push(province);
+    }
+    listing.address.provinceName = province.name;
+
+    let municipality = municipalities.find(municipal=> {
+        return municipal.provincialCode === listing.address.provincialCode
+                && municipal.code === listing.address.municipalityCode;
+    });
+    if (municipality === undefined) {
+        // Add the municipality to the listing belongs, if it does not exist.
+        municipality = await getMunicipality(listing.address.provincialCode, 
+                                                listing.address.municipalityCode);
+        municipality = {
+            ...municipality,
+            provincialCode: listing.address.provincialCode
+        };
+        municipalities = [...municipalities, municipality];
+    }
+    listing.address.municipalityName = municipality.name;
+
+    let mainPlace = mainPlaces.find(place=> {
+        return place.provincialCode === listing.address.provincialCode
+                && place.municipalityCode === listing.address.municipalityCode
+                && place.code === listing.address.mainPlaceCode;
+    });
+    if (mainPlace === undefined) {
+        mainPlace = await getMainPlace(listing.address.provincialCode, listing.address.municipalityCode, listing.address.mainPlaceCode);
+        mainPlace = {
+            ...mainPlace,
+            provincialCode: listing.address.provincialCode,
+            municipalityCode: listing.address.municipalityCode
+        };
+        mainPlaces.push(mainPlace);
+    } // if (mainPlace === undefined) {
+    listing.address.mainPlaceName = mainPlace.name;
+
+    let subPlace = subPlaces.find(place=> {
+        return place.provincialCode === listing.address.provincialCode
+                && place.municipalityCode === listing.address.municipalityCode
+                && place.mainPlaceCode === listing.address.mainPlaceCode
+                && place.code === listing.address.subPlaceCode;
+    });
+    if (subPlace === undefined) {
+        subPlace = await getSubPlace(listing.address.provincialCode, listing.address.municipalityCode,
+                                        listing.address.mainPlaceCode, listing.address.subPlaceCode);
+        subPlace = {
+            ...subPlace,
+            provincialCode: listing.address.provincialCode,
+            municipalityCode: listing.address.municipalityCode,
+            mainPlaceCode: listing.address.mainPlaceCode
+        };
+        subPlaces.push(subPlace);
+    } // if (subPlace === undefined) {
+    listing.address.subPlaceName = subPlace.name;            
+    
+    // Convert the Firestore Timestamp dates to Javascript dates.
+    listing.dateCreated = listing.dateCreated.toDate();
+    if ('offer' in listing.priceInfo)
+        listing.priceInfo.offer.expiryDate = listing.priceInfo.offer.expiryDate.toDate();
+    
+    // Set the current price of the listing.
+    listing.currentPrice = listing.priceInfo.regularPrice;
+    if ('offer' in listing.priceInfo && listing.priceInfo.offer.expiryDate.getTime() >= Date.now())
+        listing.currentPrice = listing.priceInfo.offer.discountedPrice;
+    
+    return listing;
+} // async function transformListingData(listing)
+
 
 /**
  * Convert an array of prices into price ranges.

@@ -11,13 +11,13 @@
  *                            add new listings at the right position on the listings array.
  *                            Remove the use of function getSortedObject. It is not necessary.
  * 2024/07/14   ITA  1.03     Maximum number of documents fetched from Firestore settable in the environment variables. Default: 10.
+ * 2024/08/07   ITA  1.04     Determine correctly when to re-load listings when the user is exploring listings.
  */
 import { useState, useRef, useEffect, useContext, memo } from 'react';
 import { CLICKED_LISTING, GET_LISTINGS_QUERY_OBJECT, PROVINCES, MUNICIPALITIES,
          MAIN_PLACES, SUB_PLACES, TRANSACTION_TYPES, PROPERTY_TYPES,
          NUMBER_OF_BEDROOMS, PRICE_FROM, PRICE_TO,
-         getProvince, getMunicipality, getMainPlace, getSubPlace,
-         LISTINGS, FetchTypes, getDocumentSnapshot} from '../utilityFunctions/firestoreComms';
+         LISTINGS, FetchTypes, getDocumentSnapshot, transformListingData} from '../utilityFunctions/firestoreComms';
 import { onSnapshot, getDocs } from 'firebase/firestore';
 import { toZarCurrencyFormat, binarySearchObj, objCompare } from '../utilityFunctions/commonFunctions';
 import { sharedVarsContext } from '../hooks/SharedVarsProvider';
@@ -238,7 +238,8 @@ function Listings() {
                                             } // if (change.type === 'removed')
 
                                             let allowed = true;
-                                            const aListing = await transFormListingData(change.doc);
+                                            const aListing = await transformListingData(getVar(PROVINCES), getVar(MUNICIPALITIES), 
+                                                                                        getVar(MAIN_PLACES), getVar(SUB_PLACES), change.doc);
 
                                             // Given the Firestore limitations, the price range filters could not be added to the query.
                                             // The solution is to filter according to the scheme below.
@@ -264,12 +265,6 @@ function Listings() {
                                             else if (comparison === 0)
                                                 theListings.splice(index2, 1); // Remove if found in theListings. No longer allowed.
                                         } // for (let index1 in changes)
-
-                                        let lastDoc = null;
-                                        if (theListings.length > 0) {
-                                            lastDoc = theListings[theListings.length - 1];
-                                            lastDocRef.current = await getDocumentSnapshot(`/listings/${lastDoc.listingId}`);
-                                        } // if (theListings.length > 0) {
 
                                         setListings(theListings);
                                         setPagination(theListings.length);
@@ -317,7 +312,16 @@ function Listings() {
                 if (listings.findIndex(doc=> (doc.listingId === snapshotDoc.id)) >= 0)
                     continue;
 
-                const myListing = await transFormListingData(snapshotDoc);
+                if (!varExists(PROVINCES))
+                    addVar(PROVINCES, []);
+                if (!varExists(MUNICIPALITIES))
+                    addVar(MUNICIPALITIES, []);
+                if (!varExists(MAIN_PLACES))
+                    addVar(MAIN_PLACES, []);
+                if (!varExists(SUB_PLACES))
+                    addVar(SUB_PLACES, []);
+                const myListing = await transformListingData(getVar(PROVINCES), getVar(MUNICIPALITIES),
+                                                             getVar(MAIN_PLACES), getVar(SUB_PLACES), snapshotDoc);
                 let addListing = true;
                 
                 // Given the Firestore limitations, the price range filters could not be added to the query.
@@ -333,113 +337,629 @@ function Listings() {
         } while (theListings.length < numDocsToFetch);
 
         const updatedListings = listings.concat(theListings);
-        updateVar(LISTINGS, updatedListings);
+        if (!varExists(LISTINGS))
+            addVar(LISTINGS, updatedListings);
+        else
+            updateVar(LISTINGS, updatedListings);
+
         setListingsLoaded(true);
     } // function loadListings()
-
-    async function transFormListingData(listingSnapshot) {
-    /**Add fields such as provinceName, municipalityName, mainPlaceName, subPlaceName, 
-     * and currentPrice. Also convert Timestamp dates to Javascript dates. */
-        const listing = listingSnapshot.data();
-        listing.listingId = listingSnapshot.id;
-        
-        if (!varExists(PROVINCES))
-            addVar(PROVINCES, []);
-
-        if (!varExists(MUNICIPALITIES))
-            addVar(MUNICIPALITIES, []);
-
-        if (!varExists(MAIN_PLACES))
-            addVar(MAIN_PLACES, []);
-
-        if (!varExists(SUB_PLACES))
-            addVar(SUB_PLACES, []);
-
-        let provinces = getVar(PROVINCES),
-            municipalities = getVar(MUNICIPALITIES),
-            mainPlaces = getVar(MAIN_PLACES),
-            subPlaces = getVar(SUB_PLACES);
-               
-        let province = provinces.find(prov=> {
-            return prov.code === listing.address.provincialCode;
-        });
-        if (province === undefined) {
-            province = await getProvince(listing.address.provincialCode);
-            provinces.push(province);
-        }
-        listing.address.provinceName = province.name;
-
-        let municipality = municipalities.find(municipal=> {
-            return municipal.provincialCode === listing.address.provincialCode
-                    && municipal.code === listing.address.municipalityCode;
-        });
-        if (municipality === undefined) {
-            // Add the municipality to the listing belongs, if it does not exist.
-            municipality = await getMunicipality(listing.address.provincialCode, 
-                                                    listing.address.municipalityCode);
-            municipality = {
-                ...municipality,
-                provincialCode: listing.address.provincialCode
-            };
-            municipalities = [...municipalities, municipality];
-        }
-        listing.address.municipalityName = municipality.name;
-
-        let mainPlace = mainPlaces.find(place=> {
-            return place.provincialCode === listing.address.provincialCode
-                    && place.municipalityCode === listing.address.municipalityCode
-                    && place.code === listing.address.mainPlaceCode;
-        });
-        if (mainPlace === undefined) {
-            mainPlace = await getMainPlace(listing.address.provincialCode, listing.address.municipalityCode, listing.address.mainPlaceCode);
-            mainPlace = {
-                ...mainPlace,
-                provincialCode: listing.address.provincialCode,
-                municipalityCode: listing.address.municipalityCode
-            };
-            mainPlaces = [...mainPlaces, mainPlace];
-        } // if (mainPlace === undefined) {
-        listing.address.mainPlaceName = mainPlace.name;
-
-        let subPlace = subPlaces.find(place=> {
-            return place.provincialCode === listing.address.provincialCode
-                    && place.municipalityCode === listing.address.municipalityCode
-                    && place.mainPlaceCode === listing.address.mainPlaceCode
-                    && place.code === listing.address.subPlaceCode;
-        });
-        if (subPlace === undefined) {
-            subPlace = await getSubPlace(listing.address.provincialCode, listing.address.municipalityCode,
-                                            listing.address.mainPlaceCode, listing.address.subPlaceCode);
-            subPlace = {
-                ...subPlace,
-                provincialCode: listing.address.provincialCode,
-                municipalityCode: listing.address.municipalityCode,
-                mainPlaceCode: listing.address.mainPlaceCode
-            };
-            subPlaces = [...subPlaces, subPlace];
-        } // if (subPlace === undefined) {
-        listing.address.subPlaceName = subPlace.name;            
-        
-        // Convert the Firestore Timestamp dates to Javascript dates.
-        listing.dateCreated = listing.dateCreated.toDate();
-        if ('offer' in listing.priceInfo)
-            listing.priceInfo.offer.expiryDate = listing.priceInfo.offer.expiryDate.toDate();
-        
-        // Set the current price of the listing.
-        listing.currentPrice = listing.priceInfo.regularPrice;
-        if ('offer' in listing.priceInfo && listing.priceInfo.offer.expiryDate.getTime() >= Date.now())
-            listing.currentPrice = listing.priceInfo.offer.discountedPrice;
-        
-        updateVar(PROVINCES, provinces);
-        updateVar(MUNICIPALITIES, municipalities);
-        updateVar(MAIN_PLACES, mainPlaces);
-        updateVar(SUB_PLACES, subPlaces);
-        return listing;
-    } // async function transFormListingData(listing)
+ 
     
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     async function call() {
         if (!varExists(LISTINGS)) {
-            addVar(LISTINGS, []);
+            addVar(LISTINGS);
             addVar(PAGE_NUM, 1);
             load();
         } // if (!varExists(NUMBER_OF_DOCS))
@@ -447,11 +967,23 @@ function Listings() {
                   It is required to reload the listings data.
                 */
             const prevListings = getVar(LISTINGS);
-            const prevLocation = getLocations()[1];
-
-            if (['/search/all', '/search/offers',
-                 `/explore/${params.provincialCode}/${params.municipalityCode}/${params.mainPlaceCode}`]
-                .includes(prevLocation)) {
+            const prevLocations = getLocations();            
+            let reload = false;
+            if (['/search/all', '/search/offers']
+                .includes(prevLocations[1]))
+                reload = true;
+            else if (prevLocations[1] === `/explore/${params.provincialCode}`){
+                // If the user comes from the Explore Province page. '/explore/{provincialCode}',
+                // and has clicked a main place different to the one currently chosen, then the listings must be reloaded.
+                const previous2 = prevLocations[2].split('/'); // Looking for ['', 'explore', provincialCode, municipalityCode, mainPlaceCode]
+                if (previous2.length >= 5) {
+                    if (previous2[2] !== params.provincialCode 
+                        || previous2[3] !== params.municipalityCode
+                        || previous2[4] !== params.mainPlaceCode)
+                        reload = true;
+                }
+            }
+            if (reload) {
                 updateVar(LISTINGS, []);
                 updateVar(PAGE_NUM, 1);
                 load();                    
