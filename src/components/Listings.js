@@ -12,6 +12,8 @@
  *                            Remove the use of function getSortedObject. It is not necessary.
  * 2024/07/14   ITA  1.03     Maximum number of documents fetched from Firestore settable in the environment variables. Default: 10.
  * 2024/08/07   ITA  1.04     Determine correctly when to re-load listings when the user is exploring listings.
+ * 2024/'08/08  ita  1.05     Fix: Places (provinces, municipalities, etc.) shared vars Context state to be checked and added on first render of the component.
+ *                            This guarantees availability for any subsequent use.
  */
 import { useState, useRef, useEffect, useContext, memo } from 'react';
 import { CLICKED_LISTING, GET_LISTINGS_QUERY_OBJECT, PROVINCES, MUNICIPALITIES,
@@ -237,10 +239,9 @@ function Listings() {
                                                 continue;
                                             } // if (change.type === 'removed')
 
-                                            let allowed = true;
                                             const aListing = await transformListingData(getVar(PROVINCES), getVar(MUNICIPALITIES), 
                                                                                         getVar(MAIN_PLACES), getVar(SUB_PLACES), change.doc);
-
+                                            let allowed = true;
                                             // Given the Firestore limitations, the price range filters could not be added to the query.
                                             // The solution is to filter according to the scheme below.
                                             if (priceFrom !== null)
@@ -312,14 +313,6 @@ function Listings() {
                 if (listings.findIndex(doc=> (doc.listingId === snapshotDoc.id)) >= 0)
                     continue;
 
-                if (!varExists(PROVINCES))
-                    addVar(PROVINCES, []);
-                if (!varExists(MUNICIPALITIES))
-                    addVar(MUNICIPALITIES, []);
-                if (!varExists(MAIN_PLACES))
-                    addVar(MAIN_PLACES, []);
-                if (!varExists(SUB_PLACES))
-                    addVar(SUB_PLACES, []);
                 const myListing = await transformListingData(getVar(PROVINCES), getVar(MUNICIPALITIES),
                                                              getVar(MAIN_PLACES), getVar(SUB_PLACES), snapshotDoc);
                 let addListing = true;
@@ -958,6 +951,15 @@ function Listings() {
 
 
     async function call() {
+        if (!varExists(PROVINCES))
+            addVar(PROVINCES, []);
+        if (!varExists(MUNICIPALITIES))
+            addVar(MUNICIPALITIES, []);
+        if (!varExists(MAIN_PLACES))
+            addVar(MAIN_PLACES, []);
+        if (!varExists(SUB_PLACES))
+            addVar(SUB_PLACES, []);
+
         if (!varExists(LISTINGS)) {
             addVar(LISTINGS);
             addVar(PAGE_NUM, 1);
