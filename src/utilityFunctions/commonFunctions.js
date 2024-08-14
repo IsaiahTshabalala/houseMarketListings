@@ -12,6 +12,7 @@
  *                            Eliminate functions not in use: diff and diffObjArray.
  *                            Add new functions to facilitate searching of arrays (primitive and object types) and elimination of duplicates in arrays of objects,
  *                            as well as comparison of values (primitive and object types).
+ * 2024/08/14   ITA  1.04     Provide the alternative formatting to the prices. The previously used method is not consistent across browsers.
  */
 const loDash = require('lodash');
 
@@ -262,8 +263,9 @@ export function fileSizeMiB(fileInstance) {
 }
 
 /**Convert numeric input to ZAR currency format string. */
+const zarCurrencyFormat = new Intl.NumberFormat('en-US', {style: 'currency', currency: 'ZAR'});
 export function toZarCurrencyFormat(number) {
-   return number.toLocaleString('en-ZA', {style: 'currency', currency: 'ZAR'});
+   return zarCurrencyFormat.format(number);
 }
 
 /**Binary Search the sorted primitive data array for a value and return the index.

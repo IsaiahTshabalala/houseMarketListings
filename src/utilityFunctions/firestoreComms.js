@@ -11,6 +11,7 @@
  * 2024/07/14   ITA   1.03    getListingsByUserIdQueryObject: fix a bug. When the FetchType is END_AT_DOC, the query must use endAt, not startAfter.
  *                            Add priceRanges and PRICE_RANGES, to be usable with dropdowns, to enable users to select the price range of properties sought.
  * 2024/08/08   ITA   1.01    Move the function transformListingData to this file, so as to have one centralised instance, instead of same function existing across many components.
+ * 2024/08/14   ITA   1.01    Order of field constraints in queries to match the order of fields in composite indexes.
  */
 import { collection, collectionGroup, getDocs, getDoc, doc, query, where, 
          or, and, orderBy, limit, startAfter, endAt, getAggregateFromServer, count, 
@@ -299,6 +300,7 @@ export function getListingsQueryObject(mainPlaces, transactionTypes,
 
     let collectionRef = null;
     collectionRef = collection(db, '/listings');
+    const unFlaggedContraint = where('flagged', '==', false);
     const addressConstraints = [];
 
     if (![null, FetchTypes.END_AT_DOC, FetchTypes.START_AFTER_DOC].includes(fetchType))
@@ -328,7 +330,6 @@ export function getListingsQueryObject(mainPlaces, transactionTypes,
         moreConstraints.push(where('priceInfo.offer.expiryDate', '>=', Timestamp.now()));
     } // if (offersOnly) {
 
-    moreConstraints.push(where('flagged', '==', false));
     const moreConstraints2 = [];
     if (numDocs !== null)
         moreConstraints2.push(limit(numDocs));
@@ -343,6 +344,7 @@ export function getListingsQueryObject(mainPlaces, transactionTypes,
     const myQuery = query(
                         collectionRef,
                         and(
+                            unFlaggedContraint,
                             or(...addressConstraints),
                             ...moreConstraints
                         ),
@@ -365,9 +367,9 @@ export function getListingsByUserIdQueryObject(userId, numDocs = null, snapshotD
     if (fetchType === null && numDocs === null)
         throw new Error('numDocs must be specified.');
 
-    const constraints = [ 
+    const constraints = [
+                            where('flagged', '==', false), 
                             where('userId', '==', userId),
-                            where('flagged', '==', false),
                             orderBy('dateCreated', 'desc')
                         ];
 
@@ -393,8 +395,8 @@ export async function getListingCountPerProvince(provincialCode) {
 
     const collectionRef = collection(db, '/listings');
     const constraints = [
-                            where('address.provincialCode', '==', provincialCode),
-                            where('flagged', '==', false)
+                            where('flagged', '==', false),
+                            where('address.provincialCode', '==', provincialCode)
                         ];
 
     const myQuery = query(collectionRef, ...constraints);
@@ -409,9 +411,9 @@ export async function getListingCountPerMunicipality(provincialCode, municipalit
 
     const collectionRef = collection(db, '/listings');
     const constraints = [
+                            where('flagged', '==', false),
                             where('address.provincialCode', '==', provincialCode),
-                            where('address.municipalityCode', '==', municipalityCode),
-                            where('flagged', '==', false)
+                            where('address.municipalityCode', '==', municipalityCode)
                         ];
 
     const myQuery = query(collectionRef, ...constraints);
@@ -426,10 +428,10 @@ export async function getListingCountPerMainPlace(provincialCode, municipalityCo
 
     const collectionRef = collection(db, '/listings');
     const constraints = [
+                            where('flagged', '==', false),
                             where('address.provincialCode', '==', provincialCode),
                             where('address.municipalityCode', '==', municipalityCode),
-                            where('address.mainPlaceCode', '==', mainPlaceCode),
-                            where('flagged', '==', false)
+                            where('address.mainPlaceCode', '==', mainPlaceCode)
                         ];
 
     const myQuery = query(collectionRef, ...constraints);
@@ -455,10 +457,10 @@ export function getListingsPerMainPlaceQueryObject(provincialCode, municipalityC
 
     const collectionRef = collection(db, '/listings');
     const constraints = [
+                            where('flagged', '==', false),
                             where('address.provincialCode', '==', provincialCode),
                             where('address.municipalityCode', '==', municipalityCode),
-                            where('address.mainPlaceCode', '==', mainPlaceCode),
-                            where('flagged', '==', false)
+                            where('address.mainPlaceCode', '==', mainPlaceCode)
                         ];    
 
     if (numDocs !== null)

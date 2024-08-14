@@ -12,8 +12,9 @@
  *                            Remove the use of function getSortedObject. It is not necessary.
  * 2024/07/14   ITA  1.03     Maximum number of documents fetched from Firestore settable in the environment variables. Default: 10.
  * 2024/08/07   ITA  1.04     Determine correctly when to re-load listings when the user is exploring listings.
- * 2024/'08/08  ita  1.05     Fix: Places (provinces, municipalities, etc.) shared vars Context state to be checked and added on first render of the component.
+ * 2024/08/08   ITA  1.05     Fix: Places (provinces, municipalities, etc.) shared vars Context state to be checked and added on first render of the component.
  *                            This guarantees availability for any subsequent use.
+ * 2024/08/14  ITA   1.06     Fix: Code must separately (apart from listings shared var) check if the page number shared var exists before it is added.
  */
 import { useState, useRef, useEffect, useContext, memo } from 'react';
 import { CLICKED_LISTING, GET_LISTINGS_QUERY_OBJECT, PROVINCES, MUNICIPALITIES,
@@ -959,10 +960,11 @@ function Listings() {
             addVar(MAIN_PLACES, []);
         if (!varExists(SUB_PLACES))
             addVar(SUB_PLACES, []);
+        if (!varExists(PAGE_NUM))
+            addVar(PAGE_NUM, 1);
 
         if (!varExists(LISTINGS)) {
-            addVar(LISTINGS);
-            addVar(PAGE_NUM, 1);
+            addVar(LISTINGS, []);
             load();
         } // if (!varExists(NUMBER_OF_DOCS))
         else { /* Caters for situations where user returns to this page from search or explore pages.
