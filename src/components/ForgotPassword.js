@@ -53,13 +53,13 @@ function ForgotPassword() {
                         onChange={handleChange} value={formData.email}/>
                 </p>
 
-                <p>
-                    <button className='w3-margin-small w3-btn w3-round w3-theme-d5' type='submit'>Submit</button>
-                </p>
+                <div>
+                    <button className='w3-margin w3-btn w3-round w3-theme-d5' type='submit'>Submit</button>
+                </div>
 
-                <p>
+                <div>
                     <NavLink className='w3-margin w3-btn w3-round w3-theme-d5' to='/signin'>Sign in</NavLink>
-                </p>
+                </div>
                 <ToastContainer/>
             </form>
         </div>

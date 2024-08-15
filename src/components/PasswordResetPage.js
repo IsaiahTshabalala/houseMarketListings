@@ -15,7 +15,7 @@ function PasswordResetPage() {
             <h1>Password Reset</h1>
             A password reset message has been sent. Please check your email to reset your password.
             <p>
-                <NavLink className='w3-margin-small' to='/signin'>Login</NavLink>
+                <NavLink className='w3-margin w3-btn w3-round w3-theme-d5' to='/signin'>Login</NavLink>
             </p>
         </div>
     );

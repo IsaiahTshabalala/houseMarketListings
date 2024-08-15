@@ -13,6 +13,7 @@
  *                            Add new functions to facilitate searching of arrays (primitive and object types) and elimination of duplicates in arrays of objects,
  *                            as well as comparison of values (primitive and object types).
  * 2024/08/14   ITA  1.04     Provide the alternative formatting to the prices. The previously used method is not consistent across browsers.
+ * 2024/08/15   ITA  1.05     Currency format: replace ZAR with R. Ths is better suited for local purposes.
  */
 const loDash = require('lodash');
 
@@ -265,7 +266,7 @@ export function fileSizeMiB(fileInstance) {
 /**Convert numeric input to ZAR currency format string. */
 const zarCurrencyFormat = new Intl.NumberFormat('en-US', {style: 'currency', currency: 'ZAR'});
 export function toZarCurrencyFormat(number) {
-   return zarCurrencyFormat.format(number);
+   return zarCurrencyFormat.format(number).replace(/ZAR/gi, 'R');
 }
 
 /**Binary Search the sorted primitive data array for a value and return the index.
