@@ -12,6 +12,7 @@
  * 2024/07/14   ITA  1.03     User to select prices via a dropdown, no longer to type the minimum and maximum prices.
  * 2024/08/07   ITA  1.04     The price ranges collection must be created as an array of objects, each with price range and index as properties.
  * 2024/08/14   ITA  1.05     Enhance the way prices (priceFrom and priceTo) values are obtained from the selected price range, in keeping with the updated currency formatting.
+ * 2024/08/15   ITA  1.05     Replace ZAR with R.
  */
 import { useEffect, useState, useContext, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -344,7 +345,7 @@ function SearchListings() {
             updateVar(NUMBER_OF_BEDROOMS, selectedNumBedrooms);
     
             let selectedPriceRange = getSelected(PRICE_RANGES)[0];
-            selectedPriceRange = selectedPriceRange.priceRange.replace(/ZAR/gi, '');
+            selectedPriceRange = selectedPriceRange.priceRange.replace(/R/gi, '');
             selectedPriceRange = selectedPriceRange.replace(/,/gi, '');
             selectedPriceRange = selectedPriceRange.replace(/\s/gi, '');
             selectedPriceRange = selectedPriceRange.split('to');
