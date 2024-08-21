@@ -10,21 +10,20 @@
  * 2024/07/01   ITA   1.02     Rename field docId to listingId. 
  *                             UserId to be used in sorting the sellers in the sellers collection. Remove sortField.
  * 2024/08/07   ITA   1.03     Display the listing's map coordinates.
+ * 2024/08/19   ITA   1.06     Remove seller information from view of other users. Alternative method to contact seller to be used in the future.
  */
 import { useParams, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect, useContext, useState } from 'react';
-import { FaBed, FaBath, FaRulerCombined, FaLandmark, FaCar, FaHome, FaUsers } from 'react-icons/fa';
+import { FaBed, FaBath, FaRulerCombined, FaLandmark, FaCar, FaHome, FaUsers, FaTimesCircle } from 'react-icons/fa';
 import { LiaFileInvoiceDollarSolid } from "react-icons/lia";
 import { FaTachometerAlt } from "react-icons/fa";
 import { GiHomeGarage } from 'react-icons/gi';
 import { toZarCurrencyFormat, timeStampYyyyMmDd } from '../utilityFunctions/commonFunctions';
-import { getUser, CLICKED_LISTING } from '../utilityFunctions/firestoreComms';
+import { CLICKED_LISTING } from '../utilityFunctions/firestoreComms';
 import { sharedVarsContext } from '../hooks/SharedVarsProvider';
-import { collectionsContext } from '../hooks/CollectionsProvider';
 import { userContext } from '../hooks/UserProvider';
 import { toast, ToastContainer } from 'react-toastify';
 import toastifyTheme from './toastifyTheme';
-import Loader from './Loader';
 import ReportOrFlag from './ReportOrFlag';
 import { BsPencilFill } from 'react-icons/bs';
 
@@ -33,23 +32,16 @@ function Listing() {
     const navigate = useNavigate();
     const {getVar, varExists} = useContext(sharedVarsContext);
     const { currentUser } = useContext(userContext);
-    const { getCollectionData, collectionExists, addCollection, updateCollection} = useContext(collectionsContext);
     
-    /* Facilitate sharing of sellers data between the listings that are being clicked.
-       So that listings with a common seller do not cause multiple trips to the Firestore database,
-       when the user requests seller information (Contact Seller) */
-
+    const [modalOn, setModalOn] = useState(false);
     const [listing, setListing] = useState(null);
     const [slideIndex, setSlideIndex] = useState(0);
-    const [sellerLoaded, setSellerLoaded] = useState(true);
     const location = useLocation(); // The location which is the current Url.
     const [listingsLocation, setListingsLocation] = useState(null); // The url to return back to, from this listing page.
 
     useEffect(() => {
         
         try {
-            if (!collectionExists('sellers'))
-                addCollection('sellers', [], 'userId asc');
             // Get the listing that was clicked in the listings page.
             if (varExists(CLICKED_LISTING))
                 setListing(getVar(CLICKED_LISTING));
@@ -84,44 +76,6 @@ function Listing() {
         navigate(`${location.pathname}/edit`);
     } // function goToEdit() {
 
-    async function loadSellerInfo() {
-        try {
-            setSellerLoaded(false);
-            if (currentUser === null || (!('authCurrentUser' in currentUser))) { // User not signed in.
-                toast.error('You must be signed in to be able view seller information!', toastifyTheme);
-                return;
-            } // if (currentUser === null || (!('authCurrentUser' in currentUser)))
-
-            if (!('personalDetails' in currentUser)) {
-                toast.error('You must complete registration of your account be able to view seller information!', toastifyTheme);
-                return;
-            } // if (!('personalDetails' in currentUser))
-
-            // Find the seller in the collection.
-            const sellers = getCollectionData('sellers');
-            let seller = sellers.find(aSeller=> {
-                return aSeller.userId === listing.userId;
-            });
-
-            // If seller was not found in the collection, then get it from Firestore.
-            if (seller === undefined) {
-                seller = await getUser(listing.userId);
-                if (seller !== null) {
-                    seller.userId = listing.userId;
-                    updateCollection('sellers', [...sellers, seller]);
-                    listing.seller = seller;
-                } // if (seller !== null)
-                else
-                    toast.error('Seller not found! This is unusual. We apologise for the inconvenience.', toastifyTheme);
-            } // if (seller === undefined)
-            else
-                listing.seller = seller;
-        } catch (error) {
-            toast.error('You must registered and signed in to be able to view seller information!', toastifyTheme);
-        } finally {
-            setSellerLoaded(true);
-        }
-    } // function loadSellerInfo() {
 
     function getRateDescription(rateObj) {
         if (!(('amount' in rateObj) && ('frequency' in rateObj)))
@@ -158,6 +112,10 @@ function Listing() {
                         {`${listing.propertyType} for ${listing.transactionType}`}
                     </h5>
 
+                    <h5>
+                        Listing ID: {listing.listingId}
+                    </h5>
+                    
                     <h5>
                         Where:<br/>
                         {
@@ -295,28 +253,32 @@ function Listing() {
                             }
                         </>
                         :
-                        <>
-                            {sellerLoaded?
-                                <>
-                                    {(('seller' in listing) && (listing.seller !== null))?
-                                        <p className='w3-input-theme-1 w3-padding-small'>
-                                            Contact: {listing.seller.firstName + ' ' + listing.seller.surname}<br/>
-                                            Email: {listing.seller.email}<br/>
-                                            Mobile No: {listing.seller.mobileNo}
-                                        </p>
-                                        :
-                                        <h4>
-                                            <NavLink className="w3-btn w3-round w3-theme-d5" onClick={e=> loadSellerInfo()}>
-                                                Contact Seller
-                                            </NavLink>
-                                        </h4>
-                                    }
-                                </>
-                                :
-                                <Loader message='Loading seller...'/>
-                            }
+                        <>                            
+                            <p>
+                                <NavLink className="w3-btn w3-round w3-theme-d5" onClick={e=> setModalOn(true)}>
+                                    Contact Seller
+                                </NavLink>
+                            </p>
                         </>
                     }
+
+                    <div id='id01' className='w3-modal' style={{display: modalOn? 'block': 'none'}}>
+                        <div className='w3-modal-content'>
+                            <div className='w3-container w3-theme'>
+                                <span onClick={e=>  setModalOn(false)} className='w3-button w3-display-topright'><FaTimesCircle/></span>
+                                <h4>
+                                    Feature currently unavailable
+                                </h4>
+                                
+                                
+                                
+                                <div className='w3-padding'>
+                                    <button className='w3-btn w3-margin-small w3-theme-d5 w3-round' type='button'
+                                            onClick={e=> setModalOn(false)}>OK</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </>
             }
 

@@ -12,6 +12,7 @@
  *                           Update the listings sharedVar during the addition/update of a listing.
  * 2024/07/14  ITA  1.03     During the update or creation of a listing. The created listing must be placed at the right position on the sharedVar listings array.
  * 2024/08/07  ITA  1.04     Allow map coordinates to be populated optionally.
+ * 2024/08/20  ITA  1.05     Indicate the map coordinate fields as optional.
  */
 import { doc, setDoc, Timestamp, deleteField } from 'firebase/firestore';
 import { db, auth } from '../config/appConfig.js';
@@ -1414,10 +1415,10 @@ function AddOrEditListing() {
         
         
                     <div className=''>
-                        <h4>Map Coordinates</h4>
+                        <h4>Map Coordinates (Optional)</h4>
                         <div>
                             <div className='w3-padding-small side-by-side'>
-                                <label htmlFor='mapCoordinates-latitude'>* Latitude</label>
+                                <label htmlFor='mapCoordinates-latitude'>Latitude</label>
                                 <input name='mapCoordinates-latitude' autoComplete='off' disabled={isNotEditable('mapCoordinates.latitude')} className='w3-input w3-input-theme-1' type='number' 
                                         aria-label='Latitude' onChange={e=> handleChange(e)} value={formData.mapCoordinates.latitude}  />
                                 {getEditIcon('mapCoordinates.latitude')}
@@ -1425,7 +1426,7 @@ function AddOrEditListing() {
                             </div>
         
                             <div className='w3-padding-small side-by-side'>
-                                <label htmlFor='longitude'>* Longitude</label>
+                                <label htmlFor='mapCoordinates-longitude'>Longitude</label>
                                 <input name='mapCoordinates-longitude' autoComplete='off' disabled={isNotEditable('mapCoordinates.longitude')} maxLength={50} minLength={2} className='w3-input w3-input-theme-1' type='number' 
                                         aria-label='Longitude' onChange={e=> handleChange(e)} value={formData.mapCoordinates.longitude} />
                                 {getEditIcon('mapCoordinates.longitude')}
