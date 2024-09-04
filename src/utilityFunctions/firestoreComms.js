@@ -11,7 +11,9 @@
  * 2024/07/14   ITA   1.03    getListingsByUserIdQueryObject: fix a bug. When the FetchType is END_AT_DOC, the query must use endAt, not startAfter.
  *                            Add priceRanges and PRICE_RANGES, to be usable with dropdowns, to enable users to select the price range of properties sought.
  * 2024/08/08   ITA   1.01    Move the function transformListingData to this file, so as to have one centralised instance, instead of same function existing across many components.
- * 2024/08/14   ITA   1.01    Order of field constraints in queries to match the order of fields in composite indexes.
+ * 2024/08/14   ITA   1.02    Order of field constraints in queries to match the order of fields in composite indexes.
+ * 2024/09/04   ITA   1.03    In the transformListings function, handle instance where the province/municipality/main-place/sub-place of a listing is not available in the provinces collection. This will eliminate errors
+ *                            and enable users to be able to view and update their listings. Assign place names such listings as 'Unknown Province', 'Unknown Municipality', etc.
  */
 import { collection, collectionGroup, getDocs, getDoc, doc, query, where, 
          or, and, orderBy, limit, startAfter, endAt, getAggregateFromServer, count, 
@@ -60,9 +62,10 @@ export async function transformListingData(provinces, municipalities, mainPlaces
     });
     if (province === undefined) {
         province = await getProvince(listing.address.provincialCode);
-        provinces.push(province);
+        if (province)
+            provinces.push(province);
     }
-    listing.address.provinceName = province.name;
+    listing.address.provinceName = province? province.name : 'Unknown Province';
 
     let municipality = municipalities.find(municipal=> {
         return municipal.provincialCode === listing.address.provincialCode
@@ -72,13 +75,15 @@ export async function transformListingData(provinces, municipalities, mainPlaces
         // Add the municipality to the listing belongs, if it does not exist.
         municipality = await getMunicipality(listing.address.provincialCode, 
                                                 listing.address.municipalityCode);
-        municipality = {
-            ...municipality,
-            provincialCode: listing.address.provincialCode
-        };
-        municipalities = [...municipalities, municipality];
+        if (municipality) {
+            municipality = {
+                ...municipality,
+                provincialCode: listing.address.provincialCode
+            };
+            municipalities = [...municipalities, municipality];            
+        }
     }
-    listing.address.municipalityName = municipality.name;
+    listing.address.municipalityName = municipality? municipality.name : 'Unknown Municipality';
 
     let mainPlace = mainPlaces.find(place=> {
         return place.provincialCode === listing.address.provincialCode
@@ -87,14 +92,16 @@ export async function transformListingData(provinces, municipalities, mainPlaces
     });
     if (mainPlace === undefined) {
         mainPlace = await getMainPlace(listing.address.provincialCode, listing.address.municipalityCode, listing.address.mainPlaceCode);
-        mainPlace = {
-            ...mainPlace,
-            provincialCode: listing.address.provincialCode,
-            municipalityCode: listing.address.municipalityCode
-        };
-        mainPlaces.push(mainPlace);
+        if (mainPlace) {
+            mainPlace = {
+                ...mainPlace,
+                provincialCode: listing.address.provincialCode,
+                municipalityCode: listing.address.municipalityCode
+            };
+            mainPlaces.push(mainPlace);
+        }
     } // if (mainPlace === undefined) {
-    listing.address.mainPlaceName = mainPlace.name;
+    listing.address.mainPlaceName = mainPlace? mainPlace.name : 'Unknown Main Place';
 
     let subPlace = subPlaces.find(place=> {
         return place.provincialCode === listing.address.provincialCode
@@ -105,15 +112,17 @@ export async function transformListingData(provinces, municipalities, mainPlaces
     if (subPlace === undefined) {
         subPlace = await getSubPlace(listing.address.provincialCode, listing.address.municipalityCode,
                                         listing.address.mainPlaceCode, listing.address.subPlaceCode);
-        subPlace = {
-            ...subPlace,
-            provincialCode: listing.address.provincialCode,
-            municipalityCode: listing.address.municipalityCode,
-            mainPlaceCode: listing.address.mainPlaceCode
-        };
-        subPlaces.push(subPlace);
+        if (subPlace) {
+            subPlace = {
+                ...subPlace,
+                provincialCode: listing.address.provincialCode,
+                municipalityCode: listing.address.municipalityCode,
+                mainPlaceCode: listing.address.mainPlaceCode
+            };
+            subPlaces.push(subPlace);
+        }
     } // if (subPlace === undefined) {
-    listing.address.subPlaceName = subPlace.name;            
+    listing.address.subPlaceName = subPlace? subPlace.name : 'Unknown Sub-place';
     
     // Convert the Firestore Timestamp dates to Javascript dates.
     listing.dateCreated = listing.dateCreated.toDate();
