@@ -6,11 +6,12 @@
  * Date        Dev    Version Description
  * 2024/02/29  ITA    1.00    Genesis
  * 2024/05/11  ITA    1.01    Add comment header.
+ * 2024/09/18  ITA    1.02    Export ready-made context, eliminating the need for components using this context to call useContext.
  */
-import { createContext, useRef } from "react";
+import { createContext, useContext, useRef } from "react";
 import PropTypes from 'prop-types';
 
-export const sharedVarsContext = createContext();
+const sharedVarsContext = createContext();
 
 export default function SharedVarsProvider({children}) {
     const variables = useRef({});
@@ -59,3 +60,7 @@ export default function SharedVarsProvider({children}) {
 SharedVarsProvider.propTypes = {
     children: PropTypes.element.isRequired
 };
+
+export function useSharedVarsContext() {
+    return useContext(sharedVarsContext);
+}

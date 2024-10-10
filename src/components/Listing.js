@@ -11,17 +11,19 @@
  *                             UserId to be used in sorting the sellers in the sellers collection. Remove sortField.
  * 2024/08/07   ITA   1.03     Display the listing's map coordinates.
  * 2024/08/19   ITA   1.06     Remove seller information from view of other users. Alternative method to contact seller to be used in the future.
+ * 2024/10/03   ITA   1.07     Import context directly. Variable names moved to VarNames object. User state moved to Global State.
+ *                             Link suffices for non-menu-item links.
  */
-import { useParams, NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { useEffect, useContext, useState } from 'react';
+import { useParams, Link, useLocation, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import { FaBed, FaBath, FaRulerCombined, FaLandmark, FaCar, FaHome, FaUsers, FaTimesCircle } from 'react-icons/fa';
 import { LiaFileInvoiceDollarSolid } from "react-icons/lia";
 import { FaTachometerAlt } from "react-icons/fa";
 import { GiHomeGarage } from 'react-icons/gi';
 import { toZarCurrencyFormat, timeStampYyyyMmDd } from '../utilityFunctions/commonFunctions';
-import { CLICKED_LISTING } from '../utilityFunctions/firestoreComms';
-import { sharedVarsContext } from '../hooks/SharedVarsProvider';
-import { userContext } from '../hooks/UserProvider';
+import { VarNames } from '../utilityFunctions/firestoreComms';
+import { useSharedVarsContext } from '../hooks/SharedVarsProvider';
+import { useGlobalStateContext } from '../hooks/GlobalStateProvider';
 import { toast, ToastContainer } from 'react-toastify';
 import toastifyTheme from './toastifyTheme';
 import ReportOrFlag from './ReportOrFlag';
@@ -30,8 +32,9 @@ import { BsPencilFill } from 'react-icons/bs';
 function Listing() {
     const params = useParams();
     const navigate = useNavigate();
-    const {getVar, varExists} = useContext(sharedVarsContext);
-    const { currentUser } = useContext(userContext);
+    const {getVar, varExists} = useSharedVarsContext();
+    const { getSlice } = useGlobalStateContext();
+    const currentUser = getSlice('authCurrentUser');
     
     const [modalOn, setModalOn] = useState(false);
     const [listing, setListing] = useState(null);
@@ -43,12 +46,14 @@ function Listing() {
         
         try {
             // Get the listing that was clicked in the listings page.
-            if (varExists(CLICKED_LISTING))
-                setListing(getVar(CLICKED_LISTING));
+            if (varExists(VarNames.CLICKED_LISTING))
+                setListing(getVar(VarNames.CLICKED_LISTING));
             
             let path = location.pathname;
             // Remove the /:listingId part from the current url.
             path = path.substring(0, path.length - params.listingId.length - 1);
+            if (path === '')
+                path = '/';
             setListingsLocation(path);
 
         } catch (error) {
@@ -99,7 +104,7 @@ function Listing() {
         <div className='w3-container'>
             <h1>Listing</h1>
             <p>
-                <NavLink className="w3-btn w3-theme-d5 w3-round" to={listingsLocation}>Back to listings</NavLink>
+                <Link className="w3-btn w3-theme-d5 w3-round" to={listingsLocation}>Back to listings</Link>
             </p>
             <hr/>
             {listing === null?
@@ -145,7 +150,7 @@ function Listing() {
                     
                     {(location.pathname === `/my-profile/listings/${params.listingId}`) &&
                         <h4>
-                            <NavLink className='w3-btn w3-round w3-theme-d5' onClick={goToEdit}><BsPencilFill/>Edit this listing</NavLink>
+                            <Link className='w3-btn w3-round w3-theme-d5' onClick={goToEdit}><BsPencilFill/>Edit this listing</Link>
                         </h4>
                     }
 
@@ -241,23 +246,23 @@ function Listing() {
                         Posted on {listing.dateCreated.toString()}.
                     </h4>
 
-                    {(currentUser !== null) && (currentUser.authCurrentUser?.uid === listing.userId)?
+                    {(currentUser) && (currentUser.uid === listing.userId)?
                         <>
                             <h4>
                                 <u>You created this listing.</u>
                             </h4>
                             {(location.pathname === `/my-profile/listings/${listing.listingId}`) &&
                                 <h4>
-                                    <NavLink className='w3-btn w3-round w3-theme-d5' onClick={goToEdit}><BsPencilFill/>Edit this listing</NavLink>
+                                    <Link className='w3-btn w3-round w3-theme-d5' onClick={goToEdit}><BsPencilFill/>Edit this listing</Link>
                                 </h4>
                             }
                         </>
                         :
                         <>                            
                             <p>
-                                <NavLink className="w3-btn w3-round w3-theme-d5" onClick={e=> setModalOn(true)}>
+                                <Link className="w3-btn w3-round w3-theme-d5" onClick={e=> setModalOn(true)}>
                                     Contact Seller
-                                </NavLink>
+                                </Link>
                             </p>
                         </>
                     }
@@ -284,7 +289,7 @@ function Listing() {
 
             <hr/>
             <p>
-                <NavLink className="w3-btn w3-round w3-theme-d5" to={listingsLocation}>Back to listings</NavLink>
+                <Link className="w3-btn w3-round w3-theme-d5" to={listingsLocation}>Back to listings</Link>
             </p>
             <ToastContainer/>
 

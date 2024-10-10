@@ -7,42 +7,28 @@
  * 2024/07/09  ITA    1.02     Rectify the CSS of the ADD NEW LISTING NavLink.
  *                             Remove the listingsKey, it is not used.
  * 2024/07/11  ITA    1.03     Ensure the guaranteed display of user listings. Even if the user has only 1 listing.
+ * 2024/08/11  ITA    1.04     Import context directly. Variable names moved to the VarNames object.
+ *                             Query name to be specified, so as to provide a que to the listings component, as to which query to invoke.
  */
-import { useContext, useEffect, useRef, useState } from 'react';
-import { NavLink } from "react-router-dom";
-import { toast, ToastContainer } from 'react-toastify';
+import { Link } from "react-router-dom";
 import { IoIosArrowForward } from "react-icons/io";
-import { sharedVarsContext } from "../hooks/SharedVarsProvider";
 import Listings from './Listings';
 import Registered from './Registered';
-import { getListingsByUserIdQueryObject, GET_LISTINGS_QUERY_OBJECT } from '../utilityFunctions/firestoreComms';
-import toastifyTheme from './toastifyTheme';
-import { w3ThemeD5 } from './moreStyles';
+import { VarNames, QueryNames } from '../utilityFunctions/firestoreComms';
+import { useSharedVarsContext } from '../hooks/SharedVarsProvider';
+import { useEffect, useState } from "react";
 
 function MyListings() {
-    const {varExists, addVar} = useContext(sharedVarsContext);
-    const firstRenderRef = useRef(true);
-    const [showListings, setShowListings] = useState(false);
+    const {addVar, updateVar, varExists} = useSharedVarsContext();
+    const [queryName, setQueryName] = useState('');
 
-    useEffect(()=> {
-        (async ()=> {
-            if (firstRenderRef.current === false)
-                return;
+    useEffect(() => {
+        if (!varExists(VarNames.QUERY_NAME))
+            addVar(VarNames.QUERY_NAME, QueryNames.MY_LISTINGS);
+        else
+            updateVar(VarNames.QUERY_NAME, QueryNames.MY_LISTINGS);
 
-            firstRenderRef.current = false;
-            try {
-                if (!varExists(GET_LISTINGS_QUERY_OBJECT)) {
-                    addVar(GET_LISTINGS_QUERY_OBJECT, getListingsByUserIdQueryObject);
-                } // if (!varExists(LISTINGS)) {
-                setShowListings(varExists(GET_LISTINGS_QUERY_OBJECT));
-            } catch (error) {
-                console.log(error);
-                toast.error(error, toastifyTheme);
-            } finally {
-            } // finally
-
-        })();
-
+        setQueryName(QueryNames.MY_LISTINGS);
     }, []);
     
     return (
@@ -50,15 +36,12 @@ function MyListings() {
             <div className='w3-container'>
                 <h1>My Listings</h1>
                 <div>
-                    <NavLink className="w3-btn w3-round" style={w3ThemeD5} to='/my-profile/listings/new'>
+                    <Link className="w3-btn w3-round w3-theme-d5" to='/my-profile/listings/new'>
                         Add new listing <IoIosArrowForward/>
-                    </NavLink>
-
-                    {showListings && 
+                    </Link>
+                    {queryName &&
                         <Listings/>
                     }
-
-                    <ToastContainer/>
                 </div>
             </div>            
         </Registered>

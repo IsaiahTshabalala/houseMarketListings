@@ -14,28 +14,42 @@
  * 2024/08/14   ITA   1.02    Order of field constraints in queries to match the order of fields in composite indexes.
  * 2024/09/04   ITA   1.03    In the transformListings function, handle instance where the province/municipality/main-place/sub-place of a listing is not available in the provinces collection. This will eliminate errors
  *                            and enable users to be able to view and update their listings. Assign place names such listings as 'Unknown Province', 'Unknown Municipality', etc.
+ * 2024/09/18   ITA   1.04    All variable names moved to the VarNames object. Renamed getListingsQueryObject appropriately to getListingsByPlaceQueryObject and added validation for place objects.
+ *                            Added a separate getAllListingsQueryObject function, for getting query for requesting all listings.
+ *                            Added a new QueryNames enumeration constant, for specifying the nature of listings query to be performed.
+ *                            Listing count functions no longer used, removed.
+ *                            
  */
 import { collection, collectionGroup, getDocs, getDoc, doc, query, where, 
-         or, and, orderBy, limit, startAfter, endAt, getAggregateFromServer, count, 
-         Timestamp} from 'firebase/firestore';
+         or, and, orderBy, limit, startAfter, endAt } from 'firebase/firestore';
 import { db } from '../config/appConfig.js';
-import { getSortedObject, toZarCurrencyFormat } from './commonFunctions.js';
+import { getSortedObject, toZarCurrencyFormat, hasAll } from './commonFunctions.js';
 
-export const PROVINCES = 'provinces',
-             MUNICIPALITIES = 'municipalities',
-             MAIN_PLACES = 'mainPlaces',
-             SUB_PLACES = 'subPlaces',
-             TRANSACTION_TYPES = 'transactionTypes',
-             PROPERTY_TYPES = 'propertyTypes',
-             NUMBER_OF_BEDROOMS = 'numberOfBedrooms',
-             PRICE_FROM = 'priceFrom',
-             PRICE_TO = 'priceTo',
-             PRICE_RANGES = 'priceRanges',
-             LISTINGS = 'listings',
-             CLICKED_LISTING = 'clickedListing',
-             GET_LISTINGS_QUERY_OBJECT = 'getListingsQueryObject',
-             QUERY_TIME = 'queryTime',
-             REPORTS = 'reports';
+// For naming of context variables.
+export const VarNames = Object.freeze({
+    PROVINCES: 'provinces',
+    MUNICIPALITIES: 'municipalities',
+    MAIN_PLACES: 'mainPlaces',
+    SUB_PLACES: 'subPlaces',
+    TRANSACTION_TYPES: 'transactionTypes',
+    PROPERTY_TYPES: 'propertyTypes',
+    NUMBER_OF_BEDROOMS: 'numberOfBedrooms',
+    PRICE_FROM: 'priceFrom',
+    PRICE_TO: 'priceTo',
+    PRICE_RANGES: 'priceRanges',
+    LISTINGS: 'listings',
+    CLICKED_LISTING: 'clickedListing',
+    OFFERS_ONLY: 'offersOnly',
+    GET_LISTINGS_QUERY_OBJECT: 'getListingsQueryObject',
+    QUERY_NAME: 'queryName',
+    REPORTS: 'reports',
+    LISTINGS_KEY: 'listingsKey',
+    NUMBER_OF_DOCS: 'numberOfDocuments', // The current number of documents that are being listened to.
+    LAST_DOC: 'lastDocument', // The last document that was retrieved from Firestore.
+    PAGE_NUM: 'pageNumber',
+    REPORTS_TO_DISPLAY: 'reportsToDisplay',
+    REPORTED_LISTINGS: 'reportedListings'
+});
 
 export const propertyTypes = ['House', 'Apartment/Flat', 'Town House', 'Room', 'Vacant Land'],
              transactionTypes = ['Rent', 'Sale'],
@@ -46,9 +60,11 @@ export const FetchTypes = Object.freeze({
     START_AFTER_DOC: 'START_AFTER_DOC' // Query data after a specified document.
 });
 
-export const NUMBER_OF_DOCS = 'numberOfDocuments', // The current number of documents that are being listened to.
-             LAST_DOC = 'lastDocument'; // The last document that was retrieved from Firestore.
-
+export const QueryNames = Object.freeze({
+    ALL_LISTINGS: 'ALL_LISTINGS',
+    MY_LISTINGS: 'MY_LISTINGS',
+    FILTERED_LISTINGS: 'FILTERED_LISTINGS'
+});
 
 /**To a listing record:
  * Add fields such as provinceName, municipalityName, mainPlaceName, subPlaceName, 
@@ -263,7 +279,7 @@ export function getProvince(provincialCode) {
             name
         }
      */    
-    const path = `${PROVINCES}/${provincialCode}`;
+    const path = `${VarNames.PROVINCES}/${provincialCode}`;
     return getDocument(path);
 } // export function getProvince(provincialCode) {
 
@@ -274,7 +290,7 @@ export function getMunicipality(provincialCode, municipalityCode) {
             name
         }
      */
-    const path = `${PROVINCES}/${provincialCode}/${MUNICIPALITIES}/${municipalityCode}`;
+    const path = `${VarNames.PROVINCES}/${provincialCode}/${VarNames.MUNICIPALITIES}/${municipalityCode}`;
     return getDocument(path);
 } // export function getMunicipality(provincialCode, municipalityCode) {
 
@@ -285,7 +301,7 @@ export function getMainPlace(provincialCode, municipalityCode, mainPlaceCode) {
             name
         }
      */
-    const path = `${PROVINCES}/${provincialCode}/${MUNICIPALITIES}/${municipalityCode}/${MAIN_PLACES}/${mainPlaceCode}`;
+    const path = `${VarNames.PROVINCES}/${provincialCode}/${VarNames.MUNICIPALITIES}/${municipalityCode}/${VarNames.MAIN_PLACES}/${mainPlaceCode}`;
     return getDocument(path);
 } // export function getMainPlace(provincialCode, municipalityCode, mainPlaceCode) {
 
@@ -297,46 +313,105 @@ export function getSubPlace(provincialCode, municipalityCode, mainPlaceCode, sub
             name
         }
      */
-    const path = `${PROVINCES}/${provincialCode}/${MUNICIPALITIES}/${municipalityCode}/${MAIN_PLACES}/${mainPlaceCode}/`
-                    + `${SUB_PLACES}/${subPlaceCode}`;
+    const path = `${VarNames.PROVINCES}/${provincialCode}/${VarNames.MUNICIPALITIES}/${municipalityCode}/${VarNames.MAIN_PLACES}/${mainPlaceCode}/`
+                    + `${VarNames.SUB_PLACES}/${subPlaceCode}`;
     return getDocument(path);
 } // export function getMunicipality(provincialCode, municipalityCode) {
 
-/** Build and return a query object based on the supplied parameters. */
-export function getListingsQueryObject(mainPlaces, transactionTypes, 
-                                        propertyTypes, numberOfBedrooms, offersOnly = false, 
-                                        numDocs = null, snapshotDoc = null, fetchType = null) {
-
-    let collectionRef = null;
-    collectionRef = collection(db, '/listings');
+/** Build and return a query object based on the supplied parameters. 
+ * @param {*} places An array of places. Can be an array of provincial codes (string array), municipalities or mainPlaces
+*/
+export function getListingsByPlacesQueryObject(places = null, transactionTypes = null, 
+                                                propertyTypes = null, numberOfBedrooms = null, offersOnly = false, 
+                                                numDocs = null, snapshotDoc = null, fetchType = null) {
+    let placeType;
+    let collectionRef = collection(db, '/listings');
     const unFlaggedContraint = where('flagged', '==', false);
     const addressConstraints = [];
 
-    if (![null, FetchTypes.END_AT_DOC, FetchTypes.START_AFTER_DOC].includes(fetchType))
-        throw(new Error(`fetchType must be one of ${FetchTypes.toString()}`));
+    if (places) {
+        if (!(places?.length)) {
+            throw new Error('places must be a non-empty array.');
+        }
+    
+        // Verifying the type of places provided.
+        const testPlace = places[0];
+        if ((typeof testPlace) === 'string') {
+            placeType = 'province';
+        }
+        else if (hasAll(testPlace,
+                    'code', // main place code
+                    'municipalityCode',
+                    'provincialCode')) {
+            placeType = 'mainPlace';
+        }
+        else if (hasAll(testPlace,
+                        'code', // municipality code
+                        'provincialCode')) {
+            placeType = 'municipality';
+        }
+        else
+            throw new Error('Please ensure that the place objects have the correct fields.');
+    
+        if (![null, FetchTypes.END_AT_DOC, FetchTypes.START_AFTER_DOC].includes(fetchType))
+            throw(new Error(`fetchType must be one of ${FetchTypes.toString()}`));
+    
+        if (snapshotDoc === null && fetchType !== null) // A doc must be specified for non-null fetchType
+            throw new Error(`fetchType is ${fetchType}, but the document is null.`);
+    
+        if (fetchType === null && numDocs === null)
+            throw new Error('numDocs must be specified.');
+    
+        if (placeType === 'province') {
+            const codes = places;
+            codes.forEach(code=> {
+                const constr = and(
+                    where('address.provincialCode', '==', code)
+                );
+                addressConstraints.push(constr);
+            });
+        }
+        else if (placeType === 'municipality') {
+            const municipalities = places;
+            municipalities.forEach(municipality=> {
+                const constr = and(
+                    where('address.provincialCode', '==', municipality.provincialCode),
+                    where('address.municipalityCode', '==', municipality.code)
+                );
+                addressConstraints.push(constr);
+            });
+        }
+        else if (placeType === 'mainPlace') {
+            const mainPlaces = places;
+            mainPlaces.forEach(mainPlace=> {
+                const constr = and(
+                                    where('address.provincialCode', '==', mainPlace.provincialCode),
+                                    where('address.municipalityCode', '==', mainPlace.municipalityCode),
+                                    where('address.mainPlaceCode', '==', mainPlace.code),
+                                );
+                addressConstraints.push(constr);
+            });
+        }  
+    } // if (places)
 
-    if (snapshotDoc === null && fetchType !== null) // A doc must be specified for non-null fetchType
-        throw new Error(`fetchType is ${fetchType}, but the document is null.`);
+    const moreConstraints = [];
 
-    if (fetchType === null && numDocs === null)
-        throw new Error('numDocs must be specified.');
+    if (transactionTypes?.length) {
+        moreConstraints.push(
+            where('transactionType', 'in', transactionTypes)
+        );
+    }
+    if (propertyTypes?.length)
+        moreConstraints.push(
+            where('propertyType', 'in', propertyTypes)
+        );
+    if (numberOfBedrooms?.length)
+        moreConstraints.push(
+            where('numBedrooms', 'in', numberOfBedrooms)
+        );
 
-    mainPlaces.forEach(mainPlace=> {
-        const constr = and(
-                            where('address.provincialCode', '==', mainPlace.provincialCode),
-                            where('address.municipalityCode', '==', mainPlace.municipalityCode),
-                            where('address.mainPlaceCode', '==', mainPlace.code),
-                        );
-        addressConstraints.push(constr);
-    });
-
-    const moreConstraints = [
-        where('transactionType', 'in', transactionTypes),
-        where('propertyType', 'in', propertyTypes),
-        where('numBedrooms', 'in', numberOfBedrooms)
-    ];
     if (offersOnly) {
-        moreConstraints.push(where('priceInfo.offer.expiryDate', '>=', Timestamp.now()));
+        moreConstraints.push(where('priceInfo.offer.expiryDate', '!=', null));
     } // if (offersOnly) {
 
     const moreConstraints2 = [];
@@ -350,19 +425,62 @@ export function getListingsQueryObject(mainPlaces, transactionTypes,
             moreConstraints2.push(endAt(snapshotDoc));
     } // if (snapshotDoc !== null) {
 
+    const andConstraints = [unFlaggedContraint];
+    if (addressConstraints.length > 0) {
+        andConstraints.push(or(...addressConstraints));
+    }
+    if (moreConstraints.length > 0) {
+        andConstraints.push(moreConstraints);
+    };
+
     const myQuery = query(
-                        collectionRef,
-                        and(
-                            unFlaggedContraint,
-                            or(...addressConstraints),
-                            ...moreConstraints
-                        ),
-                        ...moreConstraints2
+                    collectionRef,
+                    and(
+                        unFlaggedContraint,
+                        or(...addressConstraints),
+                        ...moreConstraints
+                    ),
+                    ...moreConstraints2
+                );
+    return myQuery;
+} // function getListingsByPlacesQueryObject() {
+
+
+/**Get query object for all unflagged listings. */
+export function getAllListingsQueryObject(numDocs = null, snapshotDoc = null, fetchType = null) {
+    console.log('getAllListingsQueryObject');
+    let collectionRef = collection(db, '/listings');
+    if (![null, FetchTypes.END_AT_DOC, FetchTypes.START_AFTER_DOC].includes(fetchType))
+        throw(new Error(`fetchType must be one of ${FetchTypes.toString()}.`));
+
+    if (snapshotDoc === null && fetchType !== null) // A doc must be specified for non-null fetchType
+        throw new Error(`fetchType is ${fetchType}, but the document is null.`);
+    
+    if (fetchType === null && numDocs === null)
+        throw new Error('numDocs must be specified.');
+
+    const constraints = [
+                            where('flagged', '==', false)
+                        ];
+
+    if (numDocs !== null)
+        constraints.push(limit(numDocs));
+
+    if (snapshotDoc !== null) {
+        if (fetchType === FetchTypes.START_AFTER_DOC)
+            constraints.push(startAfter(snapshotDoc));
+        else if (fetchType === FetchTypes.END_AT_DOC)
+            constraints.push(endAt(snapshotDoc));
+    }
+
+    const myQuery = query(
+                        collectionRef, 
+                        ...constraints
                     );
     return myQuery;
-} // function getListingsQueryObject() {
+} // function getAllListingsQueryObject(numDocs = null, snapshotDoc = null, fetchType = null) {
 
-/** Return a query object for querying for listings of a single user, sorted in descending order of creation date.
+/** Return a query object for querying for listings of a single user, sorted in descending order of creation date. 
 */
 export function getListingsByUserIdQueryObject(userId, numDocs = null, snapshotDoc = null, fetchType = null) {
 
@@ -399,91 +517,6 @@ export function getListingsByUserIdQueryObject(userId, numDocs = null, snapshotD
     return myQuery;
 } // function getListingsByUserIdQueryObject() {
 
-/** Get the total number of listings for a province. */
-export async function getListingCountPerProvince(provincialCode) {
-
-    const collectionRef = collection(db, '/listings');
-    const constraints = [
-                            where('flagged', '==', false),
-                            where('address.provincialCode', '==', provincialCode)
-                        ];
-
-    const myQuery = query(collectionRef, ...constraints);
-    const snapshot = await getAggregateFromServer(myQuery, {
-                                countOfDocs: count()
-                            });
-    return snapshot.data().countOfDocs;
-} // export async function getListingCountProvince(provincialCode)
-
-    /** Get the total number of listings for a municipality. */
-export async function getListingCountPerMunicipality(provincialCode, municipalityCode) {
-
-    const collectionRef = collection(db, '/listings');
-    const constraints = [
-                            where('flagged', '==', false),
-                            where('address.provincialCode', '==', provincialCode),
-                            where('address.municipalityCode', '==', municipalityCode)
-                        ];
-
-    const myQuery = query(collectionRef, ...constraints);
-    const snapshot = await getAggregateFromServer(myQuery, {
-                                countOfDocs: count()
-                            });
-    return snapshot.data().countOfDocs;
-} // export async function getListingCountPerMunicipality(provincialCode, municipalityCode)
-
-/** Get the total number of listings for a main place. */
-export async function getListingCountPerMainPlace(provincialCode, municipalityCode, mainPlaceCode) {
-
-    const collectionRef = collection(db, '/listings');
-    const constraints = [
-                            where('flagged', '==', false),
-                            where('address.provincialCode', '==', provincialCode),
-                            where('address.municipalityCode', '==', municipalityCode),
-                            where('address.mainPlaceCode', '==', mainPlaceCode)
-                        ];
-
-    const myQuery = query(collectionRef, ...constraints);
-    const snapshot = await getAggregateFromServer(myQuery, {
-                                countOfDocs: count()
-                            });
-    return snapshot.data().countOfDocs;
-} // export async function getListingCountPerMainPlace(provincialCode, municipalityCode, mainPlaceCode)
-
-
-/**Return a query object to be used for querying listings in a mainPlace. */
-export function getListingsPerMainPlaceQueryObject(provincialCode, municipalityCode, mainPlaceCode,
-                                                    numDocs = null, snapshotDoc = null, fetchType = null) {
-    
-    if (![null, FetchTypes.END_AT_DOC, FetchTypes.START_AFTER_DOC].includes(fetchType))
-        throw(new Error(`fetchType must be one of ${FetchTypes.toString()}`));
-
-    if (snapshotDoc === null && fetchType !== null) // A doc must be specified for non-null fetchType
-        throw new Error(`fetchType is ${fetchType}, but the document is null.`);
-
-    if (fetchType === null && numDocs === null)
-        throw new Error('numDocs must be specified.');
-
-    const collectionRef = collection(db, '/listings');
-    const constraints = [
-                            where('flagged', '==', false),
-                            where('address.provincialCode', '==', provincialCode),
-                            where('address.municipalityCode', '==', municipalityCode),
-                            where('address.mainPlaceCode', '==', mainPlaceCode)
-                        ];    
-
-    if (numDocs !== null)
-        constraints.push(limit(numDocs));
-
-    if (snapshotDoc !== null) {
-        if (fetchType === FetchTypes.START_AFTER_DOC)
-            constraints.push(startAfter(snapshotDoc));
-        else if (fetchType === FetchTypes.END_AT_DOC)
-            constraints.push(endAt(snapshotDoc)); // Typically for listeners.
-    } // if (snapshotDoc !== null) {
-    
-    return query(collectionRef, ...constraints);
-} // export function getListingsPerMainPlaceQueryObject()
 
 /**Return a query object to be used for querying reports (complaints) on listings */
 export function getReportsToReviewQuery(numDocs = null, snapshotDoc = null, fetchType = null) {
@@ -510,14 +543,14 @@ export function getReportsToReviewQuery(numDocs = null, snapshotDoc = null, fetc
 } // export function getReportsToReviewQuery() {
 
 export function getAllProvinces() {
-    const path = PROVINCES;
+    const path = VarNames.PROVINCES;
     return getCollectionDocs(path);
 } // export function getAllProvinces() {
 
 /** Return an array of municipality documents of a province. {code, name} */
 export function getMunicipalitiesPerProvince(provincialCode) {
     
-    const path = `${PROVINCES}/${provincialCode}/${MUNICIPALITIES}`;
+    const path = `${VarNames.PROVINCES}/${provincialCode}/${VarNames.MUNICIPALITIES}`;
     return getCollectionDocs(path);
 } // export function getMunicipalitiesPerProvince(provincialCode) {
 
@@ -551,7 +584,7 @@ export async function getMunicipalitiesOfTheProvinces(provincialCodes) {
 
 /** Get all the main place documents of this municipality in this province. {code, name} */
 export function getMainPlacesPerMunicipality(provincialCode, municipalityCode) {
-    const path = `${PROVINCES}/${provincialCode}/${MUNICIPALITIES}/${municipalityCode}/${MAIN_PLACES}`;
+    const path = `${VarNames.PROVINCES}/${provincialCode}/${VarNames.MUNICIPALITIES}/${municipalityCode}/${VarNames.MAIN_PLACES}`;
     return getCollectionDocs(path);
 } // export function getMainPlacesPerMunicipality(provincialCode, municipalityCode) {
 
@@ -586,7 +619,7 @@ export async function getMainPlacesOfTheMunicipalities(municipalityObjects) {
 
 /** Get all the sub-places of this main place of this municipality of this province. */
 export function getSubPlacesPerMainPlace(provincialCode, municipalityCode, mainPlaceCode) {
-    const path = `${PROVINCES}/${provincialCode}/${MUNICIPALITIES}/${municipalityCode}/${MAIN_PLACES}/${mainPlaceCode}/${SUB_PLACES}`;
+    const path = `${VarNames.PROVINCES}/${provincialCode}/${VarNames.MUNICIPALITIES}/${municipalityCode}/${VarNames.MAIN_PLACES}/${mainPlaceCode}/${VarNames.SUB_PLACES}`;
     return getCollectionDocs(path);
 } // export function getMainPlacesPerMunicipality(provincialCode, municipalityCode, mainPlaceCode) {
 

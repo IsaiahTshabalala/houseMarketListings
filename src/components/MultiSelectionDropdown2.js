@@ -7,14 +7,17 @@
  * * --------------------------------------------------------------------------------
  * Date       Dev       Description
  * 2024/02/07 ITA       Genesis.
+ * 2024/09/18 ITA       Toggle (add/remove) class name (w3-show) for displaying list items. Remove the style attribute.
+ *                      Adjust width and add borders.
+ *                      Import context directly. Variable names moved to VarNames object.
  */
 import PropTypes from 'prop-types';
-import { useState, useEffect, useContext, memo } from 'react';
+import { useState, useEffect, memo } from 'react';
 import { FaTimes } from 'react-icons/fa';
 import { RiArrowDropUpLine, RiArrowDropDownLine } from "react-icons/ri";
 import toastifyTheme from './toastifyTheme';
 import { toast } from 'react-toastify';
-import { collectionsContext } from '../hooks/CollectionsProvider';
+import { useCollectionsContext } from '../hooks/CollectionsProvider';
 
 function MultiSelectionDropdown2({
                     label, // label with which to describe the dropdown.
@@ -26,10 +29,8 @@ function MultiSelectionDropdown2({
                 }) // If provided, use this function for sorting. Otherwise sort by keyName field.
 {
 
-    const { getCollectionData, setSelected, getSelected, getMaxNumSelections } = useContext(collectionsContext);
-    const [w3ShowList, setW3ShowList] = useState(null); // Styling to enable the list of items to show or disappear.
-                                                        // Will alernate between 2 values as the Dropdown gains or losses focus
-                                                        // And also when an item is selected.
+    const { getCollectionData, setSelected, getSelected, getMaxNumSelections } = useCollectionsContext();
+    const [showItems, setShowItems] = useState(false); // true or false. Show or hide 
     const [list, setList] = useState([]);
     const [selectedItems, setSelectedItems] = useState([]);
     const [searchText, setSearchText] = useState('');
@@ -123,14 +124,14 @@ function MultiSelectionDropdown2({
     } // function removeItem(item) {
 
     function toggleShowList() {
-        if (w3ShowList === null)
+        if (!showItems)
             showList();
         else
             hideList();
     } // function toggleShowList() {
 
     function hideList() {
-        setW3ShowList(null);
+        setShowItems(false);
         try {
             setSelected(collectionName, selectedItems);
             const selItems = getSelected(collectionName); // This will retrieve the selected items in sort order.
@@ -143,14 +144,15 @@ function MultiSelectionDropdown2({
     } // function hideList() {
 
     function showList() {
-        setW3ShowList(prev=> ({display: 'block'}));
+        if (list.length > 0)
+            setShowItems(true);
     } // function showList() {
 
     return (
-        <div style={isDisabled? { pointerEvents: 'none'}: {}}>
+        <div className='w3-border w3-round w3-padding-small w3-margin-small' style={isDisabled? { pointerEvents: 'none'}: {}}>
             <label htmlFor='searchDropDown w3-padding-small'>{label}</label>
             <div className='w3-padding-small'>
-                <div className='side-by-side' style={{width: '80%'}}>
+                <div className='side-by-side' style={{width: '90%'}}>
                     <input className={`w3-input-theme-1 w3-input`}
                             type='text' id='searchDropDown' name='searchDropDown' autoComplete='off'
                             aria-label={`Type to Search for ${label}`} aria-required={true} onChange={e=> handleSearch(e)}
@@ -158,7 +160,7 @@ function MultiSelectionDropdown2({
                 </div>
                 <div className='w3-xlarge side-by-side' onClick={e=> toggleShowList(e)}>
                     <b>
-                        {w3ShowList === null? <RiArrowDropDownLine/> : <RiArrowDropUpLine/>}
+                        {!showItems? <RiArrowDropDownLine/> : <RiArrowDropUpLine/>}
                     </b>
                 </div>
                 <div className='w3-margin-top' key={selectedItemsKey}>
@@ -174,8 +176,8 @@ function MultiSelectionDropdown2({
             </div>
 
             <div className=' w3-padding-small'>
-                <div className='w3-input-theme-1 w3-dropdown-content w3-border w3-bar-block' id='dropDown' name='dropDown' aria-label={label} 
-                         style={w3ShowList} key={listKey}>
+                <div className={`w3-input-theme-1 w3-dropdown-content w3-border w3-bar-block ${showItems && 'w3-show'}`} id='dropDown' name='dropDown' aria-label={label} 
+                        key={listKey}>
                     {list.map((item)=> {
                                         return (
                                             <div className='w3-bar-item w3-button' key={`${item[valueName]}${item[keyName]}`} aria-label={item[keyName]} >

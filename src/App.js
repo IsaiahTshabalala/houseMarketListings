@@ -8,6 +8,10 @@
  *                              Add the Title component (Discounted Listings) on top of the Listings component for the route /search/offers/listings/.
  *                              Update route /search to /search/all, so that /search menu items are correctly highlightable, per selected item or current url.
  *                              User to be navigated to the home page if unavailable url path entered.
+ * 2024/09/17   ITA   1.03      Remove the CollectionProvider context around the Listing and Listings components. No longer needed. Current User state moved to Global State.
+ *                              as more state, the locations (url) history is also moved there.
+ *                              Routes defined separately, making code more readable and maintainable.
+ *                              Removed search menu items and routes. Search functionality has been moved to the home page (/).
  */
 import MenuBar from './components/MenuBar';
 import SignIn from './components/SignIn';
@@ -17,318 +21,205 @@ import ForgotPassword from './components/ForgotPassword';
 import Private from './components/Private';
 import ErrorPage2 from './components/ErrorPage2';
 import ErrorPage from './components/ErrorPage';
-import SearchListings from './components/SearchListings';
+import PrivacyPolicy from './components/PrivacyPolicy';
 import AccountInfo from './components/AccountInfo';
 import EmailVerificationSentPage from './components/EmailVerificationSentPage';
 import PasswordResetPage from './components/PasswordResetPage';
 import './App.css';
 import './index.css';
 import { RouterProvider, createBrowserRouter, Outlet } from 'react-router-dom';
-import UserProvider from './hooks/UserProvider';
-import Heading from './components/Heading';
+import GlobalStateProvider from './hooks/GlobalStateProvider';
 import MyListings from './components/MyListings';
-import Listings from './components/Listings';
 import Listing from './components/Listing';
 import CurrentUserState from './components/CurrentUserState';
 import CollectionsProvider from './hooks/CollectionsProvider';
 import SharedVarsProvider from './hooks/SharedVarsProvider';
 import AddOrEditListing from './components/AddOrEditListing';
-import Explore from './components/Explore';
-import ExploreProvince from './components/ExploreProvince';
 import Moderator from './components/Moderator';
-import LocationsProvider from './hooks/LocationsProvider';
 import LocationsRecorder from './components/LocationsRecorder';
 import Reports from './components/Reports';
 import { Navigate } from 'react-router-dom';
+import Explore from './components/Explore';
+
+const routes = [
+    {
+        path: '/error/:message',
+        element: 
+                <>
+                    <LocationsRecorder/>
+                    <MenuBar/>
+                    <ErrorPage/>
+                </>
+    },
+    {
+        path: '/',
+        element:
+                <>
+                    <LocationsRecorder/>
+                    <MenuBar/>
+                    <SharedVarsProvider>
+                        <Outlet/>
+                    </SharedVarsProvider>
+                </>,
+        errorElement: <Navigate to='/' />,
+        children: [
+            {
+                path: '/',
+                element: 
+                         <CollectionsProvider>
+                            <Explore/>
+                         </CollectionsProvider>
+            },
+            {
+                path: ':listingId',
+                element: <Listing/>
+            },
+            {
+                path: ':listingId/edit',
+                element: 
+                         <CollectionsProvider>
+                            <AddOrEditListing/>
+                         </CollectionsProvider>
+            }
+        ]
+    },
+    {
+        path: '/about/privacy',
+        element:       
+                <>
+                    <LocationsRecorder/>
+                    <MenuBar/>
+                    <PrivacyPolicy/>
+                </>
+    },
+    {
+        path: '/signin',
+        element: <SignIn/>
+    },
+    {
+        path: '/signout',
+        element: <SignOut/>
+    },
+    {
+        path: '/register',
+        element: <Register/>
+    },
+    {
+        path: '/email-verification-sent',
+        element: <EmailVerificationSentPage/>
+    },
+    {
+        path: '/error/auth/email-already-in-use',
+        element: <ErrorPage2 message='There is already an account registered with this email!'/>
+    },
+    {
+        path: '/forgot-password',
+        element: <ForgotPassword/>
+    },
+    {
+        path: '/password-reset',
+        element: <PasswordResetPage/>
+    },
+    {
+        path: '/my-profile',
+        element:
+                <>
+                    <LocationsRecorder/>
+                    <MenuBar/>
+                    <Private/>
+                </>,
+        children: [
+            {
+                path: 'account',
+                element: /**The AccountInfo component shares the collections (provinces, municipalities, main places, sub-places)
+                            with its dropdowns. Hence the CollectionProvider hook. */
+                        <CollectionsProvider>
+                            <AccountInfo/>
+                        </CollectionsProvider>
+            },
+            {
+                path: 'listings',
+                element:
+                        /**MyListings and Listing components share the clickedListing shared variable.
+                         * Hence the SharedVarsProvider useContext hook.
+                         * The 
+                        */
+                        <SharedVarsProvider>
+                            <Outlet/>
+                        </SharedVarsProvider>,
+                children: [
+                    {
+                        path: '/my-profile/listings',
+                        element: <MyListings/>
+                    },
+                    {
+                        path: '/my-profile/listings/:listingId',
+                        element: 
+                                <CollectionsProvider>
+                                    <Listing/>
+                                </CollectionsProvider>
+                    },
+                    {
+                        path: '/my-profile/listings/:listingId/edit',
+                        element: /**The AddOrEditListing component shares collections (provinces, municipalities, main places, sub-place)
+                                    with its dropdowns. Hence the CollectionsProvider useContext hook. */
+                                <CollectionsProvider>
+                                    <AddOrEditListing/>
+                                </CollectionsProvider>
+                    },
+                    {
+                        path: '/my-profile/listings/new',
+                        element: /**AddOrEditListing component shares collections (provinces, municipalities, main places, sub-places)
+                                        with its dropdowns. */
+                                <CollectionsProvider>
+                                    <AddOrEditListing/>
+                                </CollectionsProvider>
+                    }
+                ]
+            },
+            {
+                path: '/my-profile/privacy',
+                element: <PrivacyPolicy/>
+            }
+        ]                            
+    },
+    {
+        path: '/moderation',
+        element:
+                <>
+                    <LocationsRecorder/>
+                    <MenuBar/>
+                    <CollectionsProvider>
+                        <SharedVarsProvider>
+                            <Moderator/>                                                   
+                        </SharedVarsProvider>
+                    </CollectionsProvider>
+                </>,
+        children: [
+            {
+                path: '/moderation',
+                element: <Reports/>
+            },
+            {
+                path: '/moderation/:listingId',
+                element: <Listing/> // The <Listing/> components share the sellers collection (via <CollectionProvider/>) amongst themselves.
+            }
+        ]
+    }
+];
 
 function App() {
     
     return (
-        <UserProvider>
-            <LocationsProvider>
+        <GlobalStateProvider>            
+            <CurrentUserState>
                 <RouterProvider
                     router = {
-                        createBrowserRouter(
-                        [
-                            {
-                                path: '/error/:message',
-                                element: 
-                                        <>
-                                            <MenuBar/>
-                                            <LocationsRecorder/>
-                                            <ErrorPage/>
-                                        </>
-                            },
-                            {
-                                path: '/',
-                                element:
-                                        <>
-                                            <MenuBar/>
-                                            <LocationsRecorder/>
-                                            <SharedVarsProvider>
-                                                <CurrentUserState>
-                                                    <Outlet/>
-                                                </CurrentUserState>
-                                            </SharedVarsProvider>
-                                        </>,
-                                children: [
-                                    {
-                                        path: '/',
-                                        element: <Explore/>
-                                    },
-                                    {
-                                        path: '/explore',
-                                        element: <Outlet/>,
-                                        children: [
-                                            {
-                                                path: '/explore/:provincialCode',
-                                                element: <ExploreProvince/>
-                                            },
-                                            {
-                                                path: '/explore/:provincialCode/:municipalityCode/:mainPlaceCode',
-                                                element: /** Collection provider used in order for <Listing/> components to share sellers collection
-                                                                amongst themselves. */
-                                                        <CollectionsProvider>
-                                                            <Outlet/>
-                                                        </CollectionsProvider>,
-                                                children: [
-                                                    {
-                                                        path: '/explore/:provincialCode/:municipalityCode/:mainPlaceCode',
-                                                        element: <Listings/>
-                                                    },
-                                                    {
-                                                        path: '/explore/:provincialCode/:municipalityCode/:mainPlaceCode/:listingId',
-                                                        element: <Listing/>
-                                                    }
-                                                ]
-                                            }
-                                        ]
-                                    }
-                                ],
-                                errorElement: <Navigate to='/' />
-                            },
-                            {
-                                path: '/search',
-                                element:
-                                        <>
-                                            <MenuBar/>                                        
-                                            <LocationsRecorder/>
-                                            <CurrentUserState>
-                                                <Outlet/>
-                                            </CurrentUserState>
-                                        </>,
-                                children: [
-                                    {
-                                        path: '/search/',
-                                        element: 
-                                                /**All children of this component will share data such as selected provinces,
-                                                 * selected main places and selected sub-places. Also the queryed listings. 
-                                                 * Hence the SharedVarsProvider useContext hook.
-                                                     */
-                                                <SharedVarsProvider>
-                                                    <Outlet/>
-                                                </SharedVarsProvider>,
-                                            children: [
-                                                { 
-                                                    path: '/search/all',
-                                                    element:
-                                                            /**SearchListings component shares collections with its dropdown components within it.
-                                                             * Hence the <CollectionsProvider/> useContext hook. */
-                                                            <CollectionsProvider>
-                                                                <>
-                                                                    <Heading title='Search for Property Listings'/>
-                                                                    <SearchListings/>
-                                                                </>
-                                                            </CollectionsProvider>
-                                                },
-                                                { 
-                                                    path: '/search/all/listings',
-                                                    element:                                                        
-                                                            /** The Listing components share sellers collection amongst themselves.
-                                                             * Hence the CollectionsProvider useContext hook. */
-                                                            <CollectionsProvider>
-                                                                <Outlet/>
-                                                            </CollectionsProvider>,
-                                                    children: [
-                                                        {
-                                                            path: '/search/all/listings/',
-                                                            element: 
-                                                                    <>
-                                                                        <Heading title='Listings'/>
-                                                                        <Listings/>
-                                                                    </>
-                                                        },
-                                                        {
-                                                            path: '/search/all/listings/:listingId',
-                                                            element: <Listing/>
-                                                        }
-                                                    ]
-                                                },
-                                                {
-                                                    path: '/search/offers',
-                                                    element:
-                                                            <Outlet/>,
-                                                    children: [
-                                                        {
-                                                            path: '/search/offers',
-                                                            element: 
-                                                                    /**SearchListings component shares collections (provinces, municipalities, main places, sub-places)
-                                                                     * with its dropdown components within it. Hence the <CollectionsProvider/> useContext hook. */
-                                                                    <CollectionsProvider>
-                                                                        <>
-                                                                            <Heading title='Search for Property Listings with Discounts'/>
-                                                                            <SearchListings/>
-                                                                        </>
-                                                                    </CollectionsProvider>
-                                                        },
-                                                        {
-                                                            path: '/search/offers/listings',
-                                                            element: 
-                                                                    <CollectionsProvider>
-                                                                        <Outlet/>
-                                                                    </CollectionsProvider>,
-                                                            children: [
-                                                                {
-                                                                    path: '/search/offers/listings',
-                                                                    element:
-                                                                            <>
-                                                                                <Heading title='Discounted Listings'/>
-                                                                                <Listings/>
-                                                                            </>
-                                                                },
-                                                                {
-                                                                    path: '/search/offers/listings/:listingId',
-                                                                    element: 
-                                                                            /**The Listing components share the sellers collection amongst them. */
-                                                                            <Listing/>
-                                                                }
-                                                            ]
-                                                        }
-                                                    ]
-                                                }
-                                            ]
-
-                                    }
-                                ],
-                                errorElement: <ErrorPage2 message='Path not found.'/>
-                            },
-                            {
-                                path: '/signin',
-                                element: <SignIn/>
-                            },
-                            {
-                                path: '/signout',
-                                element: <SignOut/>
-                            },
-                            {
-                                path: '/register',
-                                element: <Register/>
-                            },
-                            {
-                                path: '/email-verification-sent',
-                                element: <EmailVerificationSentPage/>
-                            },
-                            {
-                                path: '/error/auth/email-already-in-use',
-                                element: <ErrorPage2 message='There is already an account registered with this email!'/>
-                            },
-                            {
-                                path: '/forgot-password',
-                                element: <ForgotPassword/>
-                            },
-                            {
-                                path: '/password-reset',
-                                element: <PasswordResetPage/>
-                            },
-                            {
-                                path: '/my-profile',
-                                element:
-                                        <>
-                                            <MenuBar/>                                        
-                                            <LocationsRecorder/>
-                                            <CurrentUserState>
-                                                <Private/>
-                                            </CurrentUserState>
-                                        </>,
-                                children: [
-                                    {
-                                        path: 'account',
-                                        element: /**The AccountInfo component shares the collections (provinces, municipalities, main places, sub-places)
-                                                    with its dropdowns. Hence the CollectionProvider hook. */
-                                                <CollectionsProvider>
-                                                    <AccountInfo/>
-                                                </CollectionsProvider>
-                                    },
-                                    {
-                                        path: 'listings',
-                                        element:
-                                                /**MyListings and Listing components share the clickedListing shared variable.
-                                                 * Hence the SharedVarsProvider useContext hook.
-                                                 * The 
-                                                */
-                                                <SharedVarsProvider>
-                                                    <Outlet/>
-                                                </SharedVarsProvider>,
-                                        children: [
-                                            {
-                                                path: '/my-profile/listings',
-                                                element: <MyListings/>
-                                            },
-                                            {
-                                                path: '/my-profile/listings/:listingId',
-                                                element: 
-                                                        <CollectionsProvider>
-                                                            <Listing/>
-                                                        </CollectionsProvider>
-                                            },
-                                            {
-                                                path: '/my-profile/listings/:listingId/edit',
-                                                element: /**The AddOrEditListing component shares collections (provinces, municipalities, main places, sub-place)
-                                                            with its dropdowns. Hence the CollectionsProvider useContext hook. */
-                                                        <CollectionsProvider>
-                                                            <AddOrEditListing/>
-                                                        </CollectionsProvider>
-                                            },
-                                            {
-                                                path: '/my-profile/listings/new',
-                                                element: /**AddOrEditListing component shares collections (provinces, municipalities, main places, sub-places)
-                                                                with its dropdowns. */
-                                                        <CollectionsProvider>
-                                                            <AddOrEditListing/>
-                                                        </CollectionsProvider>
-                                            }
-                                        ]
-                                    }
-                                ]                            
-                            },
-                            {
-                                path: '/moderation',
-                                element:
-                                        <> 
-                                            <MenuBar/>
-                                            <LocationsRecorder/>
-                                            <CollectionsProvider>
-                                                <SharedVarsProvider>
-                                                    <Moderator/>                                                   
-                                                </SharedVarsProvider>
-                                            </CollectionsProvider>
-                                        </>,
-                                children: [
-                                    {
-                                        path: '/moderation',
-                                        element: <Reports/>
-                                    },
-                                    {
-                                        path: '/moderation/:listingId',
-                                        element: <Listing/> // The <Listing/> components share the sellers collection (via <CollectionProvider/>) amongst themselves.
-                                    }
-                                ]
-                            }
-                        ])
+                        createBrowserRouter(routes)
                     }
                 />
-            </LocationsProvider>
-        </UserProvider>
+            </CurrentUserState>
+        </GlobalStateProvider>
     );
 }
 

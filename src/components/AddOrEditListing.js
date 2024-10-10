@@ -13,10 +13,11 @@
  * 2024/07/14  ITA  1.03     During the update or creation of a listing. The created listing must be placed at the right position on the sharedVar listings array.
  * 2024/08/07  ITA  1.04     Allow map coordinates to be populated optionally.
  * 2024/08/20  ITA  1.05     Indicate the map coordinate fields as optional.
+ * 2024/09/18  ITA  1.06     Import context directly. Variable names moved to the VarNames object.
  */
 import { doc, setDoc, Timestamp, deleteField } from 'firebase/firestore';
 import { db, auth } from '../config/appConfig.js';
-import { useState, useEffect, useContext, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate, useParams,  NavLink } from 'react-router-dom';
 import { BsCheck, BsPencilFill, BsTrash3 } from 'react-icons/bs';
 import { BiErrorCircle, BiSolidError } from 'react-icons/bi';
@@ -36,15 +37,12 @@ import { objectFromFile, hasValues,
 
 import { getAllProvinces, getMunicipalitiesPerProvince, 
          getMainPlacesPerMunicipality, getSubPlacesPerMainPlace,
-         PROVINCES, MUNICIPALITIES, MAIN_PLACES, SUB_PLACES, LISTINGS,
-         transactionTypes, propertyTypes,
-         TRANSACTION_TYPES, PROPERTY_TYPES,
-         CLICKED_LISTING} from '../utilityFunctions/firestoreComms.js';
+         VarNames, transactionTypes, propertyTypes } from '../utilityFunctions/firestoreComms.js';
 
 import { uploadFiles, allowedListingImageSize, deleteFileOrFolder, deleteFiles } from '../utilityFunctions/cloudStorageComms.js'; // Facilitate cloud storage file uploads/downloads
 import Loader from './Loader.js';
-import { collectionsContext } from '../hooks/CollectionsProvider.js';
-import { sharedVarsContext } from '../hooks/SharedVarsProvider.js';
+import { useCollectionsContext } from '../hooks/CollectionsProvider.js';
+import { useSharedVarsContext } from '../hooks/SharedVarsProvider.js';
 import Registered from './Registered.js';
 const loDash = require('lodash');
 
@@ -140,8 +138,8 @@ function AddOrEditListing() {
     const keyStep = 0.0000001;
 
     const {addCollection, getCollectionData, updateCollection, setSelected,
-            getSelected, collectionExists} = useContext(collectionsContext);
-    const {addVar, getVar, varExists, updateVar} = useContext(sharedVarsContext);
+            getSelected, collectionExists} = useCollectionsContext();
+    const {addVar, getVar, varExists, updateVar} = useSharedVarsContext();
 
     const firstRender = useRef(true);
     const listingSortFields = ['dateCreated desc', 'listingId desc'];
@@ -306,7 +304,7 @@ function AddOrEditListing() {
         try {
             // Get the currently selected province. From the collectionsContext.
             let selectedProvince = null;
-            const result = getSelected(PROVINCES);
+            const result = getSelected(VarNames.PROVINCES);
             if (result.length > 0)
                 selectedProvince = result[0];
     
@@ -326,7 +324,7 @@ function AddOrEditListing() {
             municipalities = await getMunicipalitiesPerProvince(newFormData.address.provincialCode);
     
             // Update the municipalities shared collection in the collectionsContext hook.
-            updateCollection(MUNICIPALITIES, municipalities);
+            updateCollection(VarNames.MUNICIPALITIES, municipalities);
         } catch (error) {
             toast.error(error, toastifyTheme);            
         } finally {
@@ -343,7 +341,7 @@ function AddOrEditListing() {
         try {
             // Get the currently selected municipality.
             let selectedMunicipality = null;
-            const result = getSelected(MUNICIPALITIES);
+            const result = getSelected(VarNames.MUNICIPALITIES);
             if (result.length > 0)
                 selectedMunicipality = result[0];
     
@@ -361,7 +359,7 @@ function AddOrEditListing() {
             setMainPlacesLoaded(false);
             let mainPlaces = [];
             mainPlaces = await getMainPlacesPerMunicipality(newFormData.address.provincialCode, newFormData.address.municipalityCode);
-            updateCollection(MAIN_PLACES, mainPlaces);
+            updateCollection(VarNames.MAIN_PLACES, mainPlaces);
 
         } catch (error) {
             toast.error(error, toastifyTheme);
@@ -379,7 +377,7 @@ function AddOrEditListing() {
         try {
             // Get the currently selected main place.
             let selectedMainPlace = null;
-            const result = getSelected(MAIN_PLACES);
+            const result = getSelected(VarNames.MAIN_PLACES);
             if (result.length > 0)
                 selectedMainPlace = result[0];
     
@@ -399,7 +397,7 @@ function AddOrEditListing() {
             subPlaces = await getSubPlacesPerMainPlace(newFormData.address.provincialCode, newFormData.address.municipalityCode, 
                                                         newFormData.address.mainPlaceCode);
             
-            updateCollection(SUB_PLACES, subPlaces);            
+            updateCollection(VarNames.SUB_PLACES, subPlaces);            
         } catch (error) {
             toast.error(error, toastifyTheme);
         } finally {
@@ -413,7 +411,7 @@ function AddOrEditListing() {
         try {
             // Get the selected sub-place...
             let selectedSubPlace = null;
-            const result = getSelected(SUB_PLACES);
+            const result = getSelected(VarNames.SUB_PLACES);
             if (result.length > 0)
                 selectedSubPlace = result[0];
     
@@ -463,7 +461,7 @@ function AddOrEditListing() {
     async function transactionTypeSelected() {
         try {
             let transactionType = null;
-            const result = getSelected(TRANSACTION_TYPES);
+            const result = getSelected(VarNames.TRANSACTION_TYPES);
             if (result.length > 0)
                 transactionType = result[0];
             
@@ -483,7 +481,7 @@ function AddOrEditListing() {
     async function propertyTypeSelected() {
         try {
             let propertyType = null;
-            const result = getSelected(PROPERTY_TYPES);
+            const result = getSelected(VarNames.PROPERTY_TYPES);
             if (result.length > 0)
                 propertyType = result[0];
             if (propertyType === null)
@@ -507,12 +505,12 @@ function AddOrEditListing() {
                 checkList.title = 'Invalid title';
     
             let transTypes = [];
-            transTypes = getCollectionData(TRANSACTION_TYPES);
+            transTypes = getCollectionData(VarNames.TRANSACTION_TYPES);
             if (!transTypes.includes(formData.transactionType))
                 checkList.transactionType = 'Invalid transaction type';
     
             let propTypes = [];
-            propTypes = getCollectionData(PROPERTY_TYPES);        
+            propTypes = getCollectionData(VarNames.PROPERTY_TYPES);        
             if (!propTypes.includes(formData.propertyType))
                 checkList.propertyType = 'Invalid property type';
 
@@ -557,14 +555,14 @@ function AddOrEditListing() {
                 loDash.set(checkList, 'address.streetName', 'Invalid street name');
     
             let provinces = [];
-            provinces = getCollectionData(PROVINCES);    
+            provinces = getCollectionData(VarNames.PROVINCES);    
             if (provinces.findIndex(province=> {
                 return province.code === formData.address.provincialCode;
             }) < 0)
                 loDash.set(checkList, 'address.provincialCode', 'Please choose a valid province!');
     
             let municipalities = [];
-            municipalities = getCollectionData(MUNICIPALITIES);
+            municipalities = getCollectionData(VarNames.MUNICIPALITIES);
     
             if (municipalities.findIndex(municipality=> {
                 return municipality.code === formData.address.municipalityCode;
@@ -572,14 +570,14 @@ function AddOrEditListing() {
                 loDash.set(checkList, 'address.municipalityCode', 'Please choose a valid municipality!');
     
             let mainPlaces = [];
-            mainPlaces = getCollectionData(MAIN_PLACES);            
+            mainPlaces = getCollectionData(VarNames.MAIN_PLACES);            
             if (mainPlaces.findIndex(mainPlace=> {
                 return mainPlace.code === formData.address.mainPlaceCode;
             }) < 0)
                 loDash.set(checkList, 'address.mainPlaceCode', 'Please choose a valid main place!');
             
             let subPlaces = [];
-            subPlaces = getCollectionData(SUB_PLACES);
+            subPlaces = getCollectionData(VarNames.SUB_PLACES);
     
             if (subPlaces.findIndex(subPlace=> {
                 return subPlace.code === formData.address.subPlaceCode;
@@ -821,7 +819,7 @@ function AddOrEditListing() {
         // Convert latitude and longitude to decimal numbers
         if (data.mapCoordinates.latitude === '') { // No map coordinates provided. Testing with only 1 of the map coordinates suffices.
             if (loDash.get(editableFields, 'mapCoordinates.latitude') !== undefined // This listing previously had map coordinates.
-                && loDash.get(editableFields, 'mapCoordinates.latitude') != '')
+                && loDash.get(editableFields, 'mapCoordinates.latitude') !== '')
                 data.mapCoordinates = deleteField(); // Instruct Firestore to delete mapCoordinates field.
             else
                 loDash.unset(data, 'mapCoordinates'); // Remove field from listing update.
@@ -870,7 +868,6 @@ function AddOrEditListing() {
         if (hasValues(uploadResult) && uploadResult.errors.length > 0) { // The uploadResults object has errors
             setUploadingErrors(uploadResult.errors);
             toast.error('Uploading of images failed', toastifyTheme);
-            errorFound = true;
             
             // If there was failure uploading any of the files, undo any uploads that succeeded.
             if (uploadResult.succeededFiles.length > 0) {
@@ -924,10 +921,10 @@ function AddOrEditListing() {
 
     async function updateClickedListing(newData) {
         newData.listingId = listingUniqueId.current;
-        let province = getSelected(PROVINCES)[0],
-            municipality = getSelected(MUNICIPALITIES)[0],
-            mainPlace = getSelected(MAIN_PLACES)[0],
-            subPlace = getSelected(SUB_PLACES)[0];
+        let province = getSelected(VarNames.PROVINCES)[0],
+            municipality = getSelected(VarNames.MUNICIPALITIES)[0],
+            mainPlace = getSelected(VarNames.MAIN_PLACES)[0],
+            subPlace = getSelected(VarNames.SUB_PLACES)[0];
 
         newData.address.provinceName = province.name;
         newData.address.municipalityName = municipality.name;
@@ -956,13 +953,13 @@ function AddOrEditListing() {
         if ('offer' in newData.priceInfo && newData.priceInfo.offer.expiryDate.getTime() >= Date.now())
             newData.currentPrice = newData.priceInfo.offer.discountedPrice;
 
-        if (!varExists(CLICKED_LISTING))
-            addVar(CLICKED_LISTING, newData);
+        if (!varExists(VarNames.CLICKED_LISTING))
+            addVar(VarNames.CLICKED_LISTING, newData);
         else
-            updateVar(CLICKED_LISTING, newData);
+            updateVar(VarNames.CLICKED_LISTING, newData);
 
-        if (varExists(LISTINGS)) { // Update the listings shared var accordingly.
-            const theListings = [...getVar(LISTINGS)];
+        if (varExists(VarNames.LISTINGS)) { // Update the listings shared var accordingly.
+            const theListings = [...getVar(VarNames.LISTINGS)];
             const index = binarySearchObj(theListings, newData, 0, ...listingSortFields);
             if (index < 0) // Empty array.
                 theListings.push(newData);
@@ -979,39 +976,39 @@ function AddOrEditListing() {
                 else
                     theListings[index] = newData; // Update the listings at position index.
             } // else
-            updateVar(LISTINGS, theListings);
-        } // if (varExists(LISTINGS)) {
+            updateVar(VarNames.LISTINGS, theListings);
+        } // if (varExists(VarNames.LISTINGS)) {
     } // function updateClickedListing(data) {
     
     useEffect(() => {
         (async ()=> {
             if (firstRender.current === true) {
 
-                if ((location.pathname === `/my-profile/listings/${params.listingId}/edit`) && (!varExists('clickedListing')))
+                if ((location.pathname === `/my-profile/listings/${params.listingId}/edit`) && (!varExists(VarNames.CLICKED_LISTING)))
                     navigate('/my-profile/listings');
                 
                 firstRender.current = false;
                 // Collections added by order in which their dropdowns appear in the form.
-                if (!collectionExists(TRANSACTION_TYPES)) {
+                if (!collectionExists(VarNames.TRANSACTION_TYPES)) {
                 // Use this condition above as to determine whether the collecitions data was retrieved.
 
                     try {
                         // Add the transaction types collection
-                        addCollection(TRANSACTION_TYPES, transactionTypes, 1, true, 'asc')
+                        addCollection(VarNames.TRANSACTION_TYPES, transactionTypes, 1, true, 'asc')
                         // Add the property types collection
-                        addCollection(PROPERTY_TYPES, propertyTypes, 1, true, 'asc');
+                        addCollection(VarNames.PROPERTY_TYPES, propertyTypes, 1, true, 'asc');
     
                         // Get the provinces from Firestore and load them to the collections.
                         setProvincesLoaded(false);
                         let provinces = [];    
                         provinces = await getAllProvinces();
                         provinces = provinces.map(doc=> ({...doc}));
-                        addCollection(PROVINCES, provinces, 1, false, ...placeSortFields); // false - not a primitive type.
+                        addCollection(VarNames.PROVINCES, provinces, 1, false, ...placeSortFields); // false - not a primitive type.
             
                         // For the municipalities, main places and sub-places, load the empty arrays to the collections.
-                        addCollection(MUNICIPALITIES, [], 1, false, ...placeSortFields);
-                        addCollection(MAIN_PLACES, [], 1, false, ...placeSortFields);
-                        addCollection(SUB_PLACES, [], 1, false, ...placeSortFields);
+                        addCollection(VarNames.MUNICIPALITIES, [], 1, false, ...placeSortFields);
+                        addCollection(VarNames.MAIN_PLACES, [], 1, false, ...placeSortFields);
+                        addCollection(VarNames.SUB_PLACES, [], 1, false, ...placeSortFields);
                         
                     } catch (error) {
                         toast.error(error, toastifyTheme);
@@ -1019,7 +1016,7 @@ function AddOrEditListing() {
                         setPropertyTypesKey(propertyTypesKey + keyStep); // Cause propertyTypes dropdown to re-render with its new data.                                    
                         setProvincesLoaded(true);
                     } // finally
-                } // if (!collectionExists(TRANSACTION_TYPES)) {
+                } // if (!collectionExists(VarNames.TRANSACTION_TYPES)) {
                 if (location.pathname === `/my-profile/listings/${params.listingId}/edit`) {
                     retrieveListingInfo();
                 }
@@ -1029,8 +1026,8 @@ function AddOrEditListing() {
     
     async function retrieveListingInfo() {
         // Get the listing and populate the form.
-        if (varExists('clickedListing')) {
-            let clickedListing = getVar('clickedListing');
+        if (varExists(VarNames.CLICKED_LISTING)) {
+            let clickedListing = getVar(VarNames.CLICKED_LISTING);
             clickedListing = deepClone(clickedListing);
 
             setLoadingMessage('Loading the listing ...');
@@ -1076,46 +1073,46 @@ function AddOrEditListing() {
             // Set the respective drop-downs
 
             // Set the selected transaction type and property type.
-            setSelected(TRANSACTION_TYPES, [data.transactionType]);
-            setSelected(PROPERTY_TYPES, [data.propertyType]);
+            setSelected(VarNames.TRANSACTION_TYPES, [data.transactionType]);
+            setSelected(VarNames.PROPERTY_TYPES, [data.propertyType]);
 
-            const provinces = getCollectionData(PROVINCES);
+            const provinces = getCollectionData(VarNames.PROVINCES);
             let province = provinces.find(doc=> {
                 return doc.code === data.address.provincialCode;
             });
             if (province !== undefined) {
-                setSelected(PROVINCES, [province]); // Set the selected province in the dropdown.
+                setSelected(VarNames.PROVINCES, [province]); // Set the selected province in the dropdown.
             } // if (province !== undefined) {
 
             // Update the municipalities collection with municipalities of the selected province
             let municipalities = await getMunicipalitiesPerProvince(data.address.provincialCode);
-            updateCollection(MUNICIPALITIES, municipalities);
+            updateCollection(VarNames.MUNICIPALITIES, municipalities);
             let municipality = municipalities.find(doc=> {
                 return doc.code === data.address.municipalityCode;
             });
             if (municipality !== undefined) {
-                setSelected(MUNICIPALITIES, [municipality]); // Set selected municipality.
+                setSelected(VarNames.MUNICIPALITIES, [municipality]); // Set selected municipality.
             } // if (municipality !== undefined) {
 
             // Get the main places of the selected municipality and update the main place collection.
             let mainPlaces = await getMainPlacesPerMunicipality(data.address.provincialCode, data.address.municipalityCode);
-            updateCollection(MAIN_PLACES, mainPlaces);
+            updateCollection(VarNames.MAIN_PLACES, mainPlaces);
             let mainPlace = mainPlaces.find(doc=> {
                 return doc.code === data.address.mainPlaceCode;
             });
             if (mainPlace !== undefined) {
-                setSelected(MAIN_PLACES, [mainPlace]);                
+                setSelected(VarNames.MAIN_PLACES, [mainPlace]);                
             } // if (mainPlace !== undefined) {
             
             // Get the sub-places of the selected main place and update the sub-places collection.
             let subPlaces = await getSubPlacesPerMainPlace(data.address.provincialCode, data.address.municipalityCode,
                                                             data.address.mainPlaceCode);
-            updateCollection(SUB_PLACES, subPlaces);
+            updateCollection(VarNames.SUB_PLACES, subPlaces);
             let subPlace = subPlaces.find(doc=> {
                 return doc.code === data.address.subPlaceCode;
             });
             if (subPlace !== undefined) {
-                setSelected(SUB_PLACES, [subPlace]);              
+                setSelected(VarNames.SUB_PLACES, [subPlace]);              
             }
             
             setLoadingMessage(null);
@@ -1127,7 +1124,7 @@ function AddOrEditListing() {
             setSubPlacesKey(subPlacesKey + keyStep);
             setUpdateMode(true); // Setting up the form to enable edtiting of data.
 
-        } // if (varExists('clickedListing') && varExists(LISTINGS)) {
+        } // if (varExists(VarNames.CLICKED_LISTING) && varExists(VarNames.LISTINGS)) {
     } // function retrieveListingInfo() {
 
     if (loadingMessage !== null)
@@ -1162,14 +1159,14 @@ function AddOrEditListing() {
                     </div>
                     
                     <div className='w3-margin-top'>
-                        <Dropdown label='* Transaction Type' key={transactionTypesKey} isDisabled={isNotEditable('transactionType')} collectionName={TRANSACTION_TYPES} selectedValue={formData.transactionType} 
+                        <Dropdown label='* Transaction Type' key={transactionTypesKey} isDisabled={isNotEditable('transactionType')} collectionName={VarNames.TRANSACTION_TYPES} selectedValue={formData.transactionType} 
                                             onItemSelected={transactionTypeSelected} />
                         {getEditIcon('transactionType')}
                         {showErrorIcon('transactionType')}
                     </div>
                     
                     <div className='w3-margin-top'>
-                        <Dropdown key={propertyTypesKey} label='* Property Type' isDisabled={isNotEditable('propertyType')} collectionName={PROPERTY_TYPES} selectedValue={formData.propertyType} 
+                        <Dropdown key={propertyTypesKey} label='* Property Type' isDisabled={isNotEditable('propertyType')} collectionName={VarNames.PROPERTY_TYPES} selectedValue={formData.propertyType} 
                                 onItemSelected={propertyTypeSelected} />
                         {getEditIcon('propertyType')}
                         {showErrorIcon('propertyType')}
@@ -1369,7 +1366,7 @@ function AddOrEditListing() {
                         {provincesLoaded?
                             <>
                                 <div className='w3-padding-small'>
-                                    <Dropdown2 label='* Province' collectionName={PROVINCES} keyName='name' valueName='code' onItemSelected={provinceSelected} 
+                                    <Dropdown2 label='* Province' collectionName={VarNames.PROVINCES} keyName='name' valueName='code' onItemSelected={provinceSelected} 
                                                 selectedValue={formData.address.provincialCode} isDisabled={isNotEditable('address.provincialCode')}/>
                                     {getEditIcon('address.provincialCode')}
                                     {showErrorIcon('address.provincialCode')}
@@ -1381,7 +1378,7 @@ function AddOrEditListing() {
         
                         {municipalitiesLoaded?
                             <div className='w3-padding-small'>
-                                <Dropdown2 key={municipalitiesKey} label='* Municipality' collectionName={MUNICIPALITIES} keyName='name' valueName='code' onItemSelected={municipalitySelected} 
+                                <Dropdown2 key={municipalitiesKey} label='* Municipality' collectionName={VarNames.MUNICIPALITIES} keyName='name' valueName='code' onItemSelected={municipalitySelected} 
                                                     selectedValue={formData.address.municipalityCode} isDisabled={isNotEditable('address.municipalityCode')}/>
                                 {getEditIcon('address.municipalityCode')}
                                 {showErrorIcon('address.municipalityCode')}
@@ -1392,7 +1389,7 @@ function AddOrEditListing() {
         
                         {mainPlacesLoaded?
                             <div className='w3-padding-small'>
-                                <Dropdown2 key={mainPlacesKey} label='* Main Place' collectionName={MAIN_PLACES} keyName='name' valueName='code' onItemSelected={mainPlaceSelected} 
+                                <Dropdown2 key={mainPlacesKey} label='* Main Place' collectionName={VarNames.MAIN_PLACES} keyName='name' valueName='code' onItemSelected={mainPlaceSelected} 
                                                     selectedValue={formData.address.mainPlaceCode} isDisabled={isNotEditable('address.mainPlaceCode')}/>
                                 {getEditIcon('address.mainPlaceCode')}
                                 {showErrorIcon('address.mainPlaceCode')}
@@ -1403,7 +1400,7 @@ function AddOrEditListing() {
         
                         {subPlacesLoaded?
                             <div className='w3-padding-small'>
-                                <Dropdown2 key={subPlacesKey} label='* Sub Place' collectionName={SUB_PLACES} keyName='name' valueName='code' onItemSelected={selectSubPlaceCode} 
+                                <Dropdown2 key={subPlacesKey} label='* Sub Place' collectionName={VarNames.SUB_PLACES} keyName='name' valueName='code' onItemSelected={selectSubPlaceCode} 
                                                     selectedValue={formData.address.subPlaceCode} isDisabled={isNotEditable('address.subPlaceCode')}/>
                                 {getEditIcon('address.subPlaceCode')}
                                 {showErrorIcon('address.subPlaceCode')}

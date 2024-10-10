@@ -5,19 +5,22 @@
  * Used to enable the user to view, capture or update their account information.
  * Also enables the user to enrol for 2nd factor SMS authentication.
  * ----------------------------------------------------------------------------
- Date        Dev   Version  Description
- 2023/11/20  ITA   1.00     Genesis.
- 2024/06/16  ITA   1.01     Adjust the data from the userContext is retrieved.
- 2024/07/07  ITA   1.02     The CollectionsProvider uses an improved mechanism for sorting data. Eliminate the use of the sortFields and
-                            instead use the place names for sorting.
- */
-import { useState, useEffect, useContext, useRef } from 'react';
-import { userContext } from '../hooks/UserProvider.js';
-import { collectionsContext } from '../hooks/CollectionsProvider.js';
+ * Date        Dev   Version  Description
+ * 2023/11/20  ITA   1.00     Genesis.
+ * 2024/06/16  ITA   1.01     Adjust the data from the userContext is retrieved.
+ * 2024/07/07  ITA   1.02     The CollectionsProvider uses an improved mechanism for sorting data. Eliminate the use of the sortFields and
+ *                            instead use the place names for sorting.
+ * 2024/09/18  ITA   1.03     Context imported directly. Variable names moved into a single object named VarNames.
+ *                            Current user state moved to Global State.
+ *                            SMS authentication related features can now be turned on/off using the env variable REACT_APP_SMS_AUTH_ENABLED (true/false).
+*/
+import { useState, useEffect, useRef } from 'react';
+import { useGlobalStateContext, ActionFunctions } from '../hooks/GlobalStateProvider.js';
+import { useCollectionsContext } from '../hooks/CollectionsProvider.js';
 import { doc, setDoc, Timestamp, deleteField } from 'firebase/firestore';
-import { db, isSignedIn } from '../config/appConfig.js';
+import { db, isSignedIn, auth } from '../config/appConfig.js';
 import { getAllProvinces, getMunicipalitiesPerProvince, getMainPlacesPerMunicipality, getSubPlacesPerMainPlace,
-         PROVINCES, MUNICIPALITIES, MAIN_PLACES, SUB_PLACES } from '../utilityFunctions/firestoreComms.js';
+         VarNames } from '../utilityFunctions/firestoreComms.js';
 import { ToastContainer, toast } from 'react-toastify';
 import { BiErrorCircle } from 'react-icons/bi';
 import { BsPencilFill, BsCheck } from 'react-icons/bs';
@@ -55,15 +58,19 @@ function AccountInfo() {
                                                             and is likely to perform an update.
                                                             Update mode set to false means the user is capturing their account data for the first time.
                                                         */
+    const smsAuthEnabled = (()=> {
+        let temp = process.env.REACT_APP_SMS_AUTH_ENABLED;
+        return temp === 'true';
+    })();
 
     const [editableFields, setEditableFields] = useState({}); // Used to keep track of edited fields. By keeping their previous state.
  
     // Message to be displayed while data is loading. Null when complete.
     const [loadingMessage, setLoadingMessage] = useState(null);
 
-    const { currentUser, userDispatch } = useContext(userContext);
+    const { getSlice, dispatch } = useGlobalStateContext();
     const { addCollection, getCollectionData, getSelected,
-            setSelected, updateCollection, collectionExists } = useContext(collectionsContext);
+            setSelected, updateCollection, collectionExists } = useCollectionsContext();
     const firstRender = useRef(true);
 
     const [provincesLoaded, setProvincesLoaded] = useState(true);
@@ -82,7 +89,7 @@ function AccountInfo() {
      * Also reload the municpalities dropdown with the municipalities of the currently selected province. */
     async function provinceSelected() {
         try {
-            let result = getSelected(PROVINCES);
+            let result = getSelected(VarNames.PROVINCES);
             let selectedProvince = null;
             if (result.length > 0)
                 selectedProvince = result[0];
@@ -99,7 +106,7 @@ function AccountInfo() {
             let municipalities = [];
             municipalities = await getMunicipalitiesPerProvince(selectedProvince.code);
 
-            updateCollection(MUNICIPALITIES, municipalities); 
+            updateCollection(VarNames.MUNICIPALITIES, municipalities); 
         } catch (error) {
             toast.error(error, toastifyTheme);
         } finally {
@@ -116,7 +123,7 @@ function AccountInfo() {
     async function municipalitySelected() {
         try {
             let selectedMunicipality = null;
-            const result = getSelected(MUNICIPALITIES); // Length 1 array expected.
+            const result = getSelected(VarNames.MUNICIPALITIES); // Length 1 array expected.
             if (result.length > 0)
                 selectedMunicipality = result[0];
 
@@ -132,7 +139,7 @@ function AccountInfo() {
             let mainPlaces = [];
             mainPlaces = await getMainPlacesPerMunicipality(newFormData.provincialCode, newFormData.municipalityCode);
             
-            updateCollection(MAIN_PLACES, mainPlaces);
+            updateCollection(VarNames.MAIN_PLACES, mainPlaces);
         } catch (error) {
             toast.error(error, toastifyTheme);            
         } finally {
@@ -149,7 +156,7 @@ function AccountInfo() {
         */ 
         try {
             let selectedMainPlace = null;
-            const result = getSelected(MAIN_PLACES);
+            const result = getSelected(VarNames.MAIN_PLACES);
 
             if (result.length > 0)
                 selectedMainPlace = result[0];
@@ -168,7 +175,7 @@ function AccountInfo() {
             let subPlaces = [];
             // An array of sub-places of a particular main place.
             subPlaces = await getSubPlacesPerMainPlace(newFormData.provincialCode, newFormData.municipalityCode, newFormData.mainPlaceCode);
-            updateCollection(SUB_PLACES, subPlaces);            
+            updateCollection(VarNames.SUB_PLACES, subPlaces);            
         } catch (error) {
             toast.error(error, toastifyTheme);
         } finally {
@@ -182,7 +189,7 @@ function AccountInfo() {
         // Update the sub-place code of the form data to that of the currently selected sub-place in the sub-places dropdown.
         try {
             let selectedSubPlace = null;        
-            let result = getSelected(SUB_PLACES);
+            let result = getSelected(VarNames.SUB_PLACES);
             if (result.length > 0)
                 selectedSubPlace = result[0];
     
@@ -260,11 +267,11 @@ function AccountInfo() {
                         // If the provincial code was reverted then:
                             // Set the selected province to the value reverted to.
                             provinces = [];
-                            provinces = getCollectionData(PROVINCES);
+                            provinces = getCollectionData(VarNames.PROVINCES);
     
                             selectedProvince = provinces.find(province=> province.code === tempFormData.provincialCode);
                             if (selectedProvince !== undefined)
-                                setSelected(PROVINCES, [selectedProvince]);
+                                setSelected(VarNames.PROVINCES, [selectedProvince]);
     
                             // Re-render the provinces dropdown.
                             setProvincesKey(provincesKey + keyStep);
@@ -276,12 +283,12 @@ function AccountInfo() {
                                         municipalities = result;
                                     });
                             
-                            updateCollection(MUNICIPALITIES, municipalities);
+                            updateCollection(VarNames.MUNICIPALITIES, municipalities);
     
                             // Set the selected municipality.
                             selectedMunicipality = municipalities.find(municipality=> municipality.code === tempFormData.municipalityCode);
                             if (selectedMunicipality !== undefined)
-                                setSelected(MUNICIPALITIES, [selectedMunicipality]);
+                                setSelected(VarNames.MUNICIPALITIES, [selectedMunicipality]);
     
                             setMunicipalitiesKey(municipalitiesKey + keyStep); // Re-render the municipalities dropdown.
                             setMunicipalitiesLoaded(true);
@@ -290,11 +297,11 @@ function AccountInfo() {
                         // If the municipalityCode was reverted, then:
                             // Set the selected municipality to the value reverted to:
                             municipalities = [];
-                            municipalities = getCollectionData(MUNICIPALITIES);
+                            municipalities = getCollectionData(VarNames.MUNICIPALITIES);
     
                             selectedMunicipality = municipalities.find(municipality=> municipality.code === tempFormData.municipalityCode);
                             if (selectedMunicipality !== undefined)
-                                setSelected(MUNICIPALITIES, [selectedMunicipality]);
+                                setSelected(VarNames.MUNICIPALITIES, [selectedMunicipality]);
     
                             setMunicipalitiesKey(municipalitiesKey + keyStep); // re-render the municipalities drop down.
     
@@ -304,11 +311,11 @@ function AccountInfo() {
                             await getMainPlacesPerMunicipality(tempFormData.provincialCode, tempFormData.municipalityCode)
                                     .then(result=> mainPlaces = result);
     
-                            updateCollection(MAIN_PLACES, mainPlaces);
+                            updateCollection(VarNames.MAIN_PLACES, mainPlaces);
     
                             selectedMainPlace = mainPlaces.find(mainPlace=> mainPlace.code === tempFormData.mainPlaceCode);
                             if (selectedMainPlace !== undefined)
-                                setSelected(MAIN_PLACES, [selectedMainPlace]);
+                                setSelected(VarNames.MAIN_PLACES, [selectedMainPlace]);
     
                             setMainPlacesKey(mainPlacesKey + keyStep);
                             setMainPlacesLoaded(true);
@@ -318,12 +325,12 @@ function AccountInfo() {
                             // Set the selected main place to the value that was reverted to.
                             mainPlaces = [];
                             selectedMainPlace = null;
-                            mainPlaces = getCollectionData(MAIN_PLACES);
+                            mainPlaces = getCollectionData(VarNames.MAIN_PLACES);
 
                             selectedMainPlace = mainPlaces.find(mainPlace=> mainPlace.code === tempFormData.mainPlaceCode);
 
                             if (selectedMainPlace !== undefined)
-                                setSelected(MAIN_PLACES, [selectedMainPlace]);
+                                setSelected(VarNames.MAIN_PLACES, [selectedMainPlace]);
                             
                             setMainPlacesKey(mainPlacesKey + keyStep); // Cause the re-render of the main places dropdown.
     
@@ -335,11 +342,11 @@ function AccountInfo() {
                             await getSubPlacesPerMainPlace(tempFormData.provincialCode, tempFormData.municipalityCode, tempFormData.mainPlaceCode)
                                     .then(result=> subPlaces = result);
                                 
-                            updateCollection(SUB_PLACES, subPlaces);
+                            updateCollection(VarNames.SUB_PLACES, subPlaces);
     
                             selectedSubPlace = subPlaces.find(subPlace=> subPlace.code === tempFormData.subPlaceCode);
                             if (selectedSubPlace !== undefined)
-                                setSelected(SUB_PLACES, [selectedSubPlace]);
+                                setSelected(VarNames.SUB_PLACES, [selectedSubPlace]);
     
                             setSubPlacesKey(subPlacesKey + keyStep);
                             setSubPlacesLoaded(true);
@@ -348,10 +355,10 @@ function AccountInfo() {
                         // If the sub place code was reverted, then:
                             // Set the selected sub-place to the value that was reverted to:
                             subPlaces = [];
-                            subPlaces = getCollectionData(SUB_PLACES);
+                            subPlaces = getCollectionData(VarNames.SUB_PLACES);
                             selectedSubPlace = subPlaces.find(subPlace=> subPlace.code === tempFormData.subPlaceCode);
                             if (selectedSubPlace !== undefined)
-                                setSelected(SUB_PLACES, [selectedSubPlace]);
+                                setSelected(VarNames.SUB_PLACES, [selectedSubPlace]);
                             setSubPlacesKey(subPlacesKey + keyStep);
                             break;
                     } // switch (fieldPath) {                    
@@ -411,28 +418,26 @@ function AccountInfo() {
         setLoadingMessage('Retrieving your account information ...');
         
         let data = deepClone({...init});
-        // If the user (personalDetails) data is already there in the currentUser global state, retrieve from there,
+        // If the user (personalDetails) data is already there in the global state, retrieve from there,
         // to reduce trips (and related costs) Firestore.
-        if ((currentUser !== null) && ('displayName' in currentUser.authCurrentUser) 
-            && (currentUser.authCurrentUser.displayName !== null)) {
-            data = {...data, displayName: currentUser.authCurrentUser.displayName};
-        }
+        const personalDetails = getSlice('authCurrentUser.personalDetails');
 
         try {
-            if (currentUser !== null) {
-                if ('personalDetails' in currentUser) {
-                    data = {...data, ...currentUser.personalDetails};
-                    data = {...data, ...data.address};
-                    delete data['address'];
-                    data.dateOfBirth = timeStampYyyyMmDd(new Date(data.dateOfBirth.toString()));
-                    setFormData(data);
-                    setUpdateMode(true); // Indicate that the form has been populated with data, and updates can be done by user.
-                                        // Meaning the user can selectively update/edit the fields.
-                } // if ('personalDetails' in currentUser)
-                else {
-                    setUpdateMode(false); // Meaning this is a new account info entry.
-                } // else
-            } // if (Object.keys(currentUser).length > 0) {
+            if (personalDetails) {
+                if (personalDetails?.displayName) {
+                    data = {...data, displayName: personalDetails.displayName};
+                }
+                data = {...data, ...personalDetails};
+                data = {...data, ...data.address};
+                delete data['address'];
+                data.dateOfBirth = timeStampYyyyMmDd(new Date(data.dateOfBirth.toString()));
+                setFormData(data);
+                setUpdateMode(true); // Indicate that the form has been populated with data, and updates can be done by user.
+                                    // Meaning the user can selectively update/edit the fields.
+            } // if (personalDetails)
+            else {
+                setUpdateMode(false); // Meaning this is a new account info entry.
+            } // else
         } // try
         catch (error) {
             console.log(error);
@@ -450,8 +455,8 @@ function AccountInfo() {
             let provinces = [];
             setProvincesLoaded(false);            
             
-            if (collectionExists(PROVINCES))
-                provinces = getCollectionData(PROVINCES);
+            if (collectionExists(VarNames.PROVINCES))
+                provinces = getCollectionData(VarNames.PROVINCES);
             else {
                 // At this stage, the Provinces collection had not been set. Retrieve from Firestore instead.
                 provinces = await getAllProvinces();
@@ -464,7 +469,7 @@ function AccountInfo() {
                     return prov.code === data.provincialCode;
                 });
                 if (selectedProvince !== undefined) {
-                    setSelected(PROVINCES, [selectedProvince]);
+                    setSelected(VarNames.PROVINCES, [selectedProvince]);
                     setProvincesKey(provincesKey + keyStep);
                 } // if (selectedProvince !== undefined) {
 
@@ -473,13 +478,13 @@ function AccountInfo() {
                 if (data.provincialCode !== '' && data.municipalityCode !== '' 
                     && data.mainPlaceCode !== '' && data.subPlaceCode !== '') {
                     municipalities = await getMunicipalitiesPerProvince(data.provincialCode);
-                    updateCollection(MUNICIPALITIES, municipalities);
+                    updateCollection(VarNames.MUNICIPALITIES, municipalities);
                     // Set the currently selected municipality code in the dropdown.
                     const selectedMunicipality = municipalities.find(municipality=> {
                         return municipality.code === data.municipalityCode;
                     });
                     if (selectedMunicipality !== undefined) {
-                        setSelected(MUNICIPALITIES, [selectedMunicipality]);
+                        setSelected(VarNames.MUNICIPALITIES, [selectedMunicipality]);
                     }
                     
                     // Load the main places of the user address' municipality code
@@ -487,23 +492,23 @@ function AccountInfo() {
                     let mainPlaces = [];
                     mainPlaces = await getMainPlacesPerMunicipality(data.provincialCode, data.municipalityCode);
         
-                    updateCollection(MAIN_PLACES, mainPlaces);
+                    updateCollection(VarNames.MAIN_PLACES, mainPlaces);
         
                     // Set the currently selected main place.
                     const selectedMainPlace = mainPlaces.find(mainPlace=> mainPlace.code === data.mainPlaceCode);
                     if (selectedMainPlace !== undefined)
-                        setSelected(MAIN_PLACES, [selectedMainPlace]);
+                        setSelected(VarNames.MAIN_PLACES, [selectedMainPlace]);
         
                     // Load the sub-places of the user address' main place code
                     setSubPlacesLoaded(false);
                     let subPlaces = [];
                     subPlaces = await getSubPlacesPerMainPlace(data.provincialCode, data.municipalityCode, data.mainPlaceCode);
-                    updateCollection(SUB_PLACES, subPlaces);
+                    updateCollection(VarNames.SUB_PLACES, subPlaces);
                     
                     // Set the currently selected subPlace
                     const selectedSubPlace = subPlaces.find(subPlace=> subPlace.code === data.subPlaceCode);
                     if (selectedSubPlace !== undefined)
-                        setSelected(SUB_PLACES, [selectedSubPlace]);
+                        setSelected(VarNames.SUB_PLACES, [selectedSubPlace]);
                 } // if (data.provincialCode !== '') {            
             } // if (data !== null) {
             
@@ -576,28 +581,28 @@ function AccountInfo() {
             checkList.streetName = 'Please fill in a valid Street Name!';
         
         let provinces = [];
-        provinces = getCollectionData(PROVINCES);
+        provinces = getCollectionData(VarNames.PROVINCES);
         if (provinces.findIndex(province=> {
                 return formData.provincialCode === province.code;
             }) < 0)
             checkList.provincialCode = 'Please choose a valid province!';
         
         let municipalities = [];
-        municipalities = getCollectionData(MUNICIPALITIES);
+        municipalities = getCollectionData(VarNames.MUNICIPALITIES);
         if (municipalities.findIndex(municipality=> {
                     return formData.municipalityCode === municipality.code;
                 }) < 0)
             checkList.municipalityCode = 'Please choose a valid municipality!';
         
         let mainPlaces = [];
-        mainPlaces = getCollectionData(MAIN_PLACES);
+        mainPlaces = getCollectionData(VarNames.MAIN_PLACES);
         if (mainPlaces.findIndex(mainPlace=> {
             return formData.mainPlaceCode === mainPlace.code;
         }) < 0)
             checkList.mainPlaceCode = 'Please choose a valid main place!';
         
         let subPlaces = [];
-        subPlaces = getCollectionData(SUB_PLACES);
+        subPlaces = getCollectionData(VarNames.SUB_PLACES);
         if (subPlaces.findIndex(subPlace=> {
             return formData.subPlaceCode === subPlace.code;
         }) < 0)
@@ -644,7 +649,7 @@ function AccountInfo() {
         const {displayName, firstName, surname, dateOfBirth, mobileNo,
                     complexName, unitNo, streetNo, streetName,
                     provincialCode, municipalityCode, mainPlaceCode, subPlaceCode} = formData;
-        const email = currentUser.authCurrentUser.email;
+        const email = auth.currentUser.email;
         
         let data = {
             personalDetails: {
@@ -687,17 +692,13 @@ function AccountInfo() {
             data.personalDetails.streetName = deleteField();
         
         let errorFound = false;
-        const docRef = doc(db, '/users', currentUser.authCurrentUser.uid);
+        console.log(getSlice('authCurrentUser.uid'));
+        const docRef = doc(db, '/users', getSlice('authCurrentUser.uid'));
         await setDoc(docRef, data, {merge: true})
               .then(result=> {
-                    userDispatch(
-                        {
-                            type: 'SET_PERSONAL_DETAILS',
-                            payload: {
-                                ...data.personalDetails, dateOfBirth: new Date(dateOfBirth)
-                            }
-                        }
-                    );
+                    dispatch(ActionFunctions.authSetPersonalDetails({
+                        ...data.personalDetails, dateOfBirth: new Date(dateOfBirth)
+                    }));
                     setEditableFields({});
                     setUpdateMode(true);                                               
                     setLoadingMessage(null);
@@ -727,9 +728,10 @@ function AccountInfo() {
         setEditableFields({});
     }
 
-    useEffect(() => {        
+    useEffect(() => {   
+        console.log({getSlice: getSlice()});
         (async ()=> {
-            if (currentUser  === null)
+            if (!getSlice('authCurrentUser'))
                 return;
 
             if (firstRender.current === false)
@@ -740,20 +742,20 @@ function AccountInfo() {
                 let provinces = [];
                 setProvincesLoaded(false);
 
-                if (!collectionExists(PROVINCES)) {
+                if (!collectionExists(VarNames.PROVINCES)) {
                     provinces = await getAllProvinces();
                     provinces = provinces.map(province=> ({...province}));
                     const sortFields = ['name asc'];
-                    addCollection(PROVINCES, provinces, 1, false, ...sortFields); // 1 - only item can be selected.
+                    addCollection(VarNames.PROVINCES, provinces, 1, false, ...sortFields); // 1 - only item can be selected.
 
                     /* Municipalities initialised as empty. To be re-loaded per selected province, when user selects the province */
-                    addCollection(MUNICIPALITIES, [], 1, false, ...sortFields);
+                    addCollection(VarNames.MUNICIPALITIES, [], 1, false, ...sortFields);
 
                     /* Main places initialised as empty. To be re-loaded per selected municipality. */
-                    addCollection(MAIN_PLACES, [], 1, false, ...sortFields);
+                    addCollection(VarNames.MAIN_PLACES, [], 1, false, ...sortFields);
 
                     /* Sub-places initialised as empty. To be re-loaded per selected main place. */
-                    addCollection(SUB_PLACES, [], 1, false, ...sortFields);
+                    addCollection(VarNames.SUB_PLACES, [], 1, false, ...sortFields);
                 }
             } catch(error) {
                 toast.error(error, toastifyTheme);
@@ -763,7 +765,7 @@ function AccountInfo() {
         })();
 
         retrieveAccountInfo();
-    }, [currentUser]); // useEffect()
+    }, [getSlice('authCurrentUser')]); // useEffect()
 
     if (loadingMessage !== null)
         return (
@@ -854,7 +856,7 @@ function AccountInfo() {
                             <>
                                 <div className='w3-padding-small'>
                                     <Dropdown2 key={provincesKey} label='* Province' isDisabled={isNotEditable('provincialCode')} keyName='name' valueName='code' 
-                                               collectionName={PROVINCES} selectedValue={formData.provincialCode} onItemSelected={provinceSelected} />                         
+                                               collectionName={VarNames.PROVINCES} selectedValue={formData.provincialCode} onItemSelected={provinceSelected} />                         
                                     {getEditIcon('provincialCode')}
                                     {showErrorIcon('provincialCode')}
                                 </div>
@@ -866,7 +868,7 @@ function AccountInfo() {
                         {municipalitiesLoaded?
                             <div className='w3-padding-small'>
                                 <Dropdown2 key={municipalitiesKey} label='* Municipality' isDisabled={isNotEditable('municipalityCode')} keyName='name' valueName='code' 
-                                           collectionName={MUNICIPALITIES} selectedValue={formData.municipalityCode} onItemSelected={municipalitySelected} />                         
+                                           collectionName={VarNames.MUNICIPALITIES} selectedValue={formData.municipalityCode} onItemSelected={municipalitySelected} />                         
                                 {getEditIcon('municipalityCode')}
                                 {showErrorIcon('municipalityCode')}
                             </div>
@@ -877,7 +879,7 @@ function AccountInfo() {
                         {mainPlacesLoaded?                            
                             <div className='w3-padding-small'>
                                 <Dropdown2 key={mainPlacesKey} label='* Main Place' isDisabled={isNotEditable('mainPlaceCode')} keyName='name' valueName='code' 
-                                           collectionName={MAIN_PLACES} selectedValue={formData.mainPlaceCode} onItemSelected={mainPlaceSelected} />                         
+                                           collectionName={VarNames.MAIN_PLACES} selectedValue={formData.mainPlaceCode} onItemSelected={mainPlaceSelected} />                         
                                 {getEditIcon('mainPlaceCode')}
                                 {showErrorIcon('mainPlaceCode')}
                             </div>
@@ -888,7 +890,7 @@ function AccountInfo() {
                         {subPlacesLoaded?
                             <div className='w3-padding-small'>
                                 <Dropdown2 key={subPlacesKey} label='* Sub Place' isDisabled={isNotEditable('subPlaceCode')} keyName='name' valueName='code' 
-                                           collectionName={SUB_PLACES} selectedValue={formData.subPlaceCode} onItemSelected={subPlaceSelected} />                         
+                                           collectionName={VarNames.SUB_PLACES} selectedValue={formData.subPlaceCode} onItemSelected={subPlaceSelected} />                         
                                 {getEditIcon('subPlaceCode')}
                                 {showErrorIcon('subPlaceCode')}
                             </div>
@@ -899,7 +901,7 @@ function AccountInfo() {
                                                             
                     <ToastContainer/>
                     
-                    {updateMode && 
+                    {smsAuthEnabled && updateMode && 
                         <EnrolUserForSMSAuth phoneNumber={formData.mobileNo} displayName={formData.displayName}/>
                     }
                                         

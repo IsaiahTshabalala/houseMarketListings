@@ -15,35 +15,39 @@
  * 2024/08/08   ITA  1.05     Fix: Places (provinces, municipalities, etc.) shared vars Context state to be checked and added on first render of the component.
  *                            This guarantees availability for any subsequent use.
  * 2024/08/14  ITA   1.06     Fix: Code must separately (apart from listings shared var) check if the page number shared var exists before it is added.
+ * 2024/09/18  ITA   1.07     Import context directly. Variaable names moved to the VarNames object.
+ *                            Current User state mmoved to Global State.
+ *                            Query names to replace use of paths (url) to specify which listings query to fetch.
+ *                            Link instead of NavLink suffices for non-menu-item links.
  */
-import { useState, useRef, useEffect, useContext, memo } from 'react';
-import { CLICKED_LISTING, GET_LISTINGS_QUERY_OBJECT, PROVINCES, MUNICIPALITIES,
-         MAIN_PLACES, SUB_PLACES, TRANSACTION_TYPES, PROPERTY_TYPES,
-         NUMBER_OF_BEDROOMS, PRICE_FROM, PRICE_TO,
-         LISTINGS, FetchTypes, getDocumentSnapshot, transformListingData} from '../utilityFunctions/firestoreComms';
+import { useState, useRef, useEffect, memo } from 'react';
+import { VarNames,
+         getListingsByUserIdQueryObject, getListingsByPlacesQueryObject,
+         FetchTypes, getDocumentSnapshot, transformListingData, 
+         QueryNames,
+         getAllListingsQueryObject} from '../utilityFunctions/firestoreComms';
 import { onSnapshot, getDocs } from 'firebase/firestore';
 import { toZarCurrencyFormat, binarySearchObj, objCompare } from '../utilityFunctions/commonFunctions';
-import { sharedVarsContext } from '../hooks/SharedVarsProvider';
+import { useSharedVarsContext } from '../hooks/SharedVarsProvider';
 import { FaBed, FaBath, FaRulerCombined, FaCar, FaLandmark } from "react-icons/fa";
 import { GiHomeGarage } from "react-icons/gi";
-import { NavLink, useNavigate, useLocation, useParams } from 'react-router-dom';
+import { Link, useNavigate, useLocation, useParams } from 'react-router-dom';
 import Loader from './Loader';
-import { userContext } from '../hooks/UserProvider';
-import { locationsContext } from '../hooks/LocationsProvider';
+import { useGlobalStateContext } from '../hooks/GlobalStateProvider.js';
 import { w3ThemeD5, selectedItemStyle } from './moreStyles.js';
 
 function Listings() {
-    const { getVar, addVar, updateVar, varExists} = useContext(sharedVarsContext);
-    const { currentUser } = useContext(userContext);
+    const { getVar, addVar, updateVar, varExists} = useSharedVarsContext();
+    const { getSlice } = useGlobalStateContext();
+    const [currentUser] = useState(getSlice('authCurrentUser'));
     const [listings, setListings] = useState([]);
-    const [listingsLoaded, setListingsLoaded] = useState(true);
+    const [listingsLoaded, setListingsLoaded] = useState(false);
     const firstRenderRef = useRef(true);
     
     const lastDocRef = useRef(null); /**The last fetched document from Firestore.*/
     const unsubscribeRef = useRef(null);  /**Will store an object to listen to Firestore fetched documents and update should there
                                              be changes to those documents in Firestore.*/
     const navigate = useNavigate();
-    const {getLocations} = useContext(locationsContext); // Get the recent urls that the user browsed including the current.
     const location = useLocation();
     const params = useParams();
     const numDocsToFetch = (()=> {
@@ -61,41 +65,12 @@ function Listings() {
     const PAGE_NUM = 'pageNumber';
 
     const sortFields = (()=> {
-        if  (currLocation === '/search/all/listings'
-            || currLocation === '/search/offers/listings'
-            || currLocation.startsWith('/explore/'))
+        if  (currLocation === '/')
             return ['listingId asc'];  // Fetched listings expected to be sorted by listingId.
         else if (currLocation === '/my-profile/listings')
             return ['dateCreated desc', 'listingId desc']; // Fetched listings expected to be sorted by dateCreated, then listingId.
         else
             return [];
-    })();
-
-    const backTo = (()=> {
-        let returnTo = {
-            link: '#',
-            text: ''
-        };
-
-        if (currLocation === '/search/all/listings') {
-            returnTo = {
-                link: '/search/all',
-                text: 'Back to Search All Listings'
-            };
-        }
-        else if (currLocation === '/search/offers/listings') {
-            returnTo = {
-                link: '/search/offers',
-                text: 'Back to Search for Offers'
-            };
-        }
-        else if (currLocation === `/explore/${params.provincialCode}/${params.municipalityCode}/${params.mainPlaceCode}`) {
-            returnTo = {
-                link: `/explore/${params.provincialCode}`,
-                text: 'Back to Explore Listings'
-            };
-        }
-        return returnTo;
     })();
 
     function setPagination(numListings) {
@@ -119,86 +94,139 @@ function Listings() {
         if (listing === null)
             return;
 
-        updateVar(CLICKED_LISTING, listing);
-        updateVar(PAGE_NUM, pageNum);
-        navigate(`${currLocation}/${listing.listingId}`);
+        updateVar(VarNames.CLICKED_LISTING, listing);
+        updateVar(VarNames.PAGE_NUM, pageNum);
+        const path = `${currLocation}/${listing.listingId}`.replace('//', '/');
+        navigate(path);
     } // function goToListing(listing) {
 
     async function createQuery(fetchType = null) {
-        const location = getLocations()[0]; // Current location (url)
         let qry = null;
-        const functionGetQueryObject = getVar(GET_LISTINGS_QUERY_OBJECT);
+        const queryName = getVar(VarNames.QUERY_NAME);
 
-        if (location === `/my-profile/listings`) {
+        if (queryName === QueryNames.MY_LISTINGS) {
             if (fetchType === FetchTypes.START_AFTER_DOC)
-                qry = functionGetQueryObject(currentUser.authCurrentUser.uid, numDocsToFetch,
-                                             lastDocRef.current, fetchType);
+                qry = getListingsByUserIdQueryObject(currentUser.uid, numDocsToFetch,
+                                                     lastDocRef.current, fetchType);
             else if (fetchType === FetchTypes.END_AT_DOC)
-                qry = functionGetQueryObject(currentUser.authCurrentUser.uid, null, lastDocRef.current, fetchType);
+                qry = getListingsByUserIdQueryObject(currentUser.uid, null, lastDocRef.current, fetchType);
             else
-                qry = functionGetQueryObject(currentUser.authCurrentUser.uid, numDocsToFetch);
+                qry = getListingsByUserIdQueryObject(currentUser.uid, numDocsToFetch);
         }
-        else if (['/search/all/listings', '/search/offers/listings'].includes(location)) {
-            /**Shared vars must have been provided via the SearchListings component. */
-            if (varExists(MAIN_PLACES)) {
-                const mainPlaces = getVar(MAIN_PLACES);
-                const transactionTypes = getVar(TRANSACTION_TYPES);
-                const propertyTypes = getVar(PROPERTY_TYPES);
-                const numberOfBedrooms = getVar(NUMBER_OF_BEDROOMS);
+        else if (queryName === QueryNames.FILTERED_LISTINGS) {
+            if (varExists(VarNames.PROVINCES)) {
+                const municipalities = getVar(VarNames.MUNICIPALITIES);
+                const mainPlaces = getVar(VarNames.MAIN_PLACES);
+                let provinces = getVar(VarNames.PROVINCES);
+                provinces = provinces.map(province=> (province.code));
+                const transactionTypes = getVar(VarNames.TRANSACTION_TYPES);
+                const propertyTypes = getVar(VarNames.PROPERTY_TYPES);
+                const numberOfBedrooms = getVar(VarNames.NUMBER_OF_BEDROOMS);
+                const offersOnly = getVar(VarNames.OFFERS_ONLY);
 
-                if (location === '/search/offers/listings') {
-                    if (fetchType === FetchTypes.START_AFTER_DOC) // Create a query for fetching data.
-                        qry = functionGetQueryObject(mainPlaces, transactionTypes, 
-                                                     propertyTypes, numberOfBedrooms,
-                                                     true, numDocsToFetch, lastDocRef.current, fetchType);
-                    else if (fetchType === FetchTypes.END_AT_DOC) // Create a query for listening.                   
-                        qry = functionGetQueryObject(mainPlaces, transactionTypes, 
-                                                     propertyTypes, numberOfBedrooms,
-                                                     true, null, lastDocRef.current, fetchType);
-                    else                 
-                        qry = functionGetQueryObject(mainPlaces, transactionTypes, 
-                                                    propertyTypes, numberOfBedrooms,
-                                                    true, numDocsToFetch);
-                        
-                } // if (location === '/listings/offers')
+                if (offersOnly) {
+                    if (fetchType === FetchTypes.START_AFTER_DOC) { // Create a query for fetching data.
+                        if (mainPlaces.length > 0)
+                            qry = getListingsByPlacesQueryObject(mainPlaces, transactionTypes, 
+                                                                propertyTypes, numberOfBedrooms,
+                                                                true, numDocsToFetch, lastDocRef.current, fetchType);
+                        else if (municipalities.length > 0)
+                            qry = getListingsByPlacesQueryObject(municipalities, transactionTypes, 
+                                                                propertyTypes, numberOfBedrooms,
+                                                                true, numDocsToFetch, lastDocRef.current, fetchType);
+                        else if (provinces.length > 0)
+                            qry = getListingsByPlacesQueryObject(provinces, transactionTypes, 
+                                                                propertyTypes, numberOfBedrooms,
+                                                                true, numDocsToFetch, lastDocRef.current, fetchType);
+                    }
+                    else if (fetchType === FetchTypes.END_AT_DOC) {   // Create a query for listening.                   
+                        if (mainPlaces.length > 0)
+                            qry = getListingsByPlacesQueryObject(mainPlaces, transactionTypes, 
+                                                                propertyTypes, numberOfBedrooms,
+                                                                true, null, lastDocRef.current, fetchType);
+                        else if (municipalities.length > 0)
+                            qry = getListingsByPlacesQueryObject(municipalities, transactionTypes, 
+                                                                propertyTypes, numberOfBedrooms,
+                                                                true, null, lastDocRef.current, fetchType);
+                        else if (provinces.length > 0)
+                            qry = getListingsByPlacesQueryObject(provinces, transactionTypes, 
+                                                                propertyTypes, numberOfBedrooms,
+                                                                true, null, lastDocRef.current, fetchType);
+                    }
+                    else  {
+                        if (mainPlaces.length > 0)
+                            qry = getListingsByPlacesQueryObject(mainPlaces, transactionTypes, 
+                                                                propertyTypes, numberOfBedrooms,
+                                                                true, numDocsToFetch);
+                        else if (municipalities.length > 0)
+                            qry = getListingsByPlacesQueryObject(municipalities, transactionTypes, 
+                                                                propertyTypes, numberOfBedrooms,
+                                                                true, numDocsToFetch);
+                        else if (provinces.length > 0)
+                            qry = getListingsByPlacesQueryObject(provinces, transactionTypes, 
+                                                                propertyTypes, numberOfBedrooms,
+                                                                true, numDocsToFetch);
+                    }
+                } // if (offersOnly)
                 else {
-                    if (fetchType === FetchTypes.START_AFTER_DOC)
-                        qry = functionGetQueryObject(mainPlaces, transactionTypes, 
-                                                     propertyTypes, numberOfBedrooms,
-                                                     false, numDocsToFetch, lastDocRef.current, fetchType);
-                    else if (fetchType === FetchTypes.END_AT_DOC)
-                        qry = functionGetQueryObject(mainPlaces, transactionTypes, 
-                                                     propertyTypes, numberOfBedrooms,
-                                                    false, null, lastDocRef.current, fetchType);
-                    else // fetchType === null
-                        qry = functionGetQueryObject(mainPlaces, transactionTypes, 
-                                                    propertyTypes, numberOfBedrooms,
-                                                    false, numDocsToFetch);
-                    
+                    if (fetchType === FetchTypes.START_AFTER_DOC) {
+                        if (mainPlaces.length > 0)
+                            qry = getListingsByPlacesQueryObject(mainPlaces, transactionTypes, 
+                                                                propertyTypes, numberOfBedrooms,
+                                                                false, numDocsToFetch, lastDocRef.current, fetchType);
+                        else if (municipalities.length > 0)
+                            qry = getListingsByPlacesQueryObject(municipalities, transactionTypes, 
+                                                                propertyTypes, numberOfBedrooms,
+                                                                false, numDocsToFetch, lastDocRef.current, fetchType);
+                        else if (provinces.length > 0)
+                            qry = getListingsByPlacesQueryObject(provinces, transactionTypes, 
+                                                                propertyTypes, numberOfBedrooms,
+                                                                false, numDocsToFetch, lastDocRef.current, fetchType);
+                    }
+                    else if (fetchType === FetchTypes.END_AT_DOC) {
+                        if (mainPlaces.length > 0)
+                            qry = getListingsByPlacesQueryObject(mainPlaces, transactionTypes, 
+                                                                propertyTypes, numberOfBedrooms,
+                                                                false, null, lastDocRef.current, fetchType);
+                        else if (municipalities.length > 0)
+                            qry = getListingsByPlacesQueryObject(municipalities, transactionTypes, 
+                                                                propertyTypes, numberOfBedrooms,
+                                                                false, null, lastDocRef.current, fetchType);
+                        else if (provinces.length > 0)
+                            qry = getListingsByPlacesQueryObject(provinces, transactionTypes, 
+                                                                propertyTypes, numberOfBedrooms,
+                                                                false, null, lastDocRef.current, fetchType);
+                    }
+                    else { // fetchType === null
+                        if (mainPlaces.length > 0)
+                            qry = getListingsByPlacesQueryObject(mainPlaces, transactionTypes, 
+                                                                propertyTypes, numberOfBedrooms,
+                                                                false, numDocsToFetch);
+                        else if (municipalities.length > 0)
+                            qry = getListingsByPlacesQueryObject(municipalities, transactionTypes, 
+                                                                propertyTypes, numberOfBedrooms,
+                                                                false, numDocsToFetch);
+                        else if (provinces.length)
+                            qry = getListingsByPlacesQueryObject(provinces, transactionTypes, 
+                                                                propertyTypes, numberOfBedrooms,
+                                                                false, numDocsToFetch);
+                    }
                 } // else
 
-            } // if (varExists(MAIN_PLACES))
-        } // else if (['/listings', '/listings/offers'].includes(location)) {
-        else if (location.startsWith('/explore/')) {
-            const provincialCode = params.provincialCode;
-            const municipalityCode = params.municipalityCode;
-            const mainPlaceCode = params.mainPlaceCode;
-
-            if (provincialCode !== undefined && municipalityCode !== undefined && mainPlaceCode !== undefined) {
-                if (fetchType === FetchTypes.START_AFTER_DOC)
-                    qry = functionGetQueryObject(provincialCode, municipalityCode, 
-                                                 mainPlaceCode, numDocsToFetch,
-                                                 lastDocRef.current, fetchType);
-                else if (fetchType === FetchTypes.END_AT_DOC)
-                    qry = functionGetQueryObject(provincialCode, municipalityCode, 
-                                                 mainPlaceCode, null,
-                                                 lastDocRef.current, fetchType);
-                else                    
-                    qry = functionGetQueryObject(provincialCode, municipalityCode, 
-                                                 mainPlaceCode, numDocsToFetch,
-                                                 lastDocRef.current, fetchType);
-            } // if (provincialCode !== undefined && municipalityCode !== undefined && mainPlaceCode !== undefined ...
+            } // if (varExists(VarNames.MAIN_PLACES))
         }
+        else if (queryName === QueryNames.ALL_LISTINGS) {
+            console.log({queryName, fetchType});
+            if (fetchType === FetchTypes.START_AFTER_DOC) {
+                qry = getAllListingsQueryObject(numDocsToFetch, lastDocRef.current, fetchType);
+            }
+            else if (fetchType === FetchTypes.END_AT_DOC) {                   
+                qry = getAllListingsQueryObject(null, lastDocRef.current, fetchType);
+            }
+            else { // fetchType === null
+                qry = getAllListingsQueryObject(numDocsToFetch);
+            } // else
+        } // else if (queryName === QueryNames.ALL_LISTINGS)
         return qry;
     } // async function createQuery() {
 
@@ -212,19 +240,31 @@ function Listings() {
             return;
         
         const qry = await createQuery(FetchTypes.END_AT_DOC);
-        let priceFrom = null,
-            priceTo = null;
-        
-        if (varExists(PRICE_FROM))
-            priceFrom = getVar(PRICE_FROM);
-        if (varExists(PRICE_TO))
-            priceTo = getVar(PRICE_TO);
-
+        if (!qry) // null
+            return;
+            
         unsubscribeRef.current = onSnapshot(
                                     qry, 
                                     async snapshot=> {
                                         setListingsLoaded(false);
-                                        let theListings = [...getVar(LISTINGS)];
+                                        let theListings = [...getVar(VarNames.LISTINGS)];
+                                        let priceFrom = null,
+                                            priceTo = null;
+                                        let offersOnly = false;
+                                        
+                                        const queryName = getVar(VarNames.QUERY_NAME);
+
+                                        // No listings to be filtered according to price range or offers if all listings or all user's are sought.
+                                        // Listings to be filtered according to price range or offers if the user used a search filter (SearchListings component).
+                                        if (!([QueryNames.ALL_LISTINGS, QueryNames.MY_LISTINGS].includes(queryName))) {
+                                            if (varExists(VarNames.PRICE_FROM))
+                                                priceFrom = getVar(VarNames.PRICE_FROM);
+                                            if (varExists(VarNames.PRICE_TO))
+                                                priceTo = getVar(VarNames.PRICE_TO);
+                                            if (varExists(VarNames.OFFERS_ONLY))
+                                                offersOnly = getVar(VarNames.OFFERS_ONLY);
+                                        } // if (!([QueryNames.ALL_LISTINGS, QueryNames.MY_LISTINGS].includes(queryName))) {
+
                                         const changes = snapshot.docChanges();
                                         for (let index1 in changes) {
                                             const change = changes[index1];
@@ -240,15 +280,21 @@ function Listings() {
                                                 continue;
                                             } // if (change.type === 'removed')
 
-                                            const aListing = await transformListingData(getVar(PROVINCES), getVar(MUNICIPALITIES), 
-                                                                                        getVar(MAIN_PLACES), getVar(SUB_PLACES), change.doc);
+                                            const provinces = [...getVar(VarNames.PROVINCES)];
+                                            const municipalities = [...getVar(VarNames.MUNICIPALITIES)];
+                                            const mainPlaces = [...getVar(VarNames.MAIN_PLACES)];
+                                            const subPlaces = [...getVar(VarNames.SUB_PLACES)];
+                                            const aListing = await transformListingData(provinces, municipalities, 
+                                                                                        mainPlaces, subPlaces, change.doc);
                                             let allowed = true;
                                             // Given the Firestore limitations, the price range filters could not be added to the query.
                                             // The solution is to filter according to the scheme below.
-                                            if (priceFrom !== null)
+                                            if (priceFrom)
                                                 allowed = (aListing.currentPrice >= priceFrom);
-                                            if (priceTo !== null)
+                                            if (priceTo)
                                                 allowed = allowed && (aListing.currentPrice <= priceTo);
+                                            if (allowed && offersOnly)
+                                                allowed = (aListing.priceInfo.offer.expiryDate >= new Date());
                                             
                                             // To remove from the listings, those that fall outside the price range.
                                             if (allowed) {
@@ -268,9 +314,9 @@ function Listings() {
                                                 theListings.splice(index2, 1); // Remove if found in theListings. No longer allowed.
                                         } // for (let index1 in changes)
 
-                                        setListings(theListings);
                                         setPagination(theListings.length);
-                                        updateVar(LISTINGS, theListings);
+                                        updateVar(VarNames.LISTINGS, theListings);
+                                        setListings([...theListings]);                                        
                                         setListingsLoaded(true);
                                     }, // snapshot=> {
                                     error=> {
@@ -279,63 +325,88 @@ function Listings() {
     } // async function reCreateQueryListener() {
 
     async function load() {
-        await loadListings();
+        await loadListings();        
         await recreateQueryListener();
     } // async function load() {
 
     async function loadListings() {
         setListingsLoaded(false);
         let theListings = [];
+        const existingListings = varExists(VarNames.LISTINGS)? [...getVar(VarNames.LISTINGS)] : [];
+        const queryName = getVar(VarNames.QUERY_NAME);
         do {
             let qry;
             if (lastDocRef.current === null)
                 qry = await createQuery();
             else
                 qry = await createQuery(FetchTypes.START_AFTER_DOC); // await added because createQuery tends to behave asynchronously.
-            
-            const snapshot = await getDocs(qry); // Execute the query and return the results (document snapshots).
+            if (!qry)
+                return;
 
+            const snapshot = await getDocs(qry); // Execute the query and return the results (document snapshots).
             if (snapshot.docs.length === 0)
                 break;
-            
-            lastDocRef.current = snapshot.docs[snapshot.docs.length - 1];
-            
-            let priceFrom = null,
-                priceTo = null;
 
-            if (varExists(PRICE_FROM))
-                priceFrom = getVar(PRICE_FROM);
-            if (varExists(PRICE_TO))
-                priceTo = getVar(PRICE_TO);
+            lastDocRef.current = snapshot.docs[snapshot.docs.length - 1];
+            let priceFrom = null,
+                priceTo = null;            
+            let offersOnly = false;
+            
+            // No listings to be filtered according to price range or offers if all listings or all user's are sought.
+            // Listings to be filtered according to price range or offers if the user used a search filter (SearchListings component).
+            if (!([QueryNames.ALL_LISTINGS, QueryNames.MY_LISTINGS].includes(queryName))) {
+                // Price criteria excluded when searching for all listings or the listings of a single user.
+                if (varExists(VarNames.PRICE_FROM))
+                    priceFrom = getVar(VarNames.PRICE_FROM);
+                if (varExists(VarNames.PRICE_TO))
+                    priceTo = getVar(VarNames.PRICE_TO);
+                if (varExists(VarNames.OFFERS_ONLY))
+                    offersOnly = getVar(VarNames.OFFERS_ONLY);
+            } // if (!([QueryNames.ALL_LISTINGS, QueryNames.MY_LISTINGS].includes(queryName))) {
+
+            const provinces = [...getVar(VarNames.PROVINCES)];
+            const municipalities = [...getVar(VarNames.MUNICIPALITIES)];
+            const mainPlaces = [...getVar(VarNames.MAIN_PLACES)];
+            const subPlaces = [...getVar(VarNames.SUB_PLACES)];
 
             for (const index in snapshot.docs) {
                 const snapshotDoc = snapshot.docs[index];
 
-                if (listings.findIndex(doc=> (doc.listingId === snapshotDoc.id)) >= 0)
+                // Avoid duplication...
+                if (existingListings.findIndex(doc=> (doc.listingId === snapshotDoc.id)) >= 0)
                     continue;
-
-                const myListing = await transformListingData(getVar(PROVINCES), getVar(MUNICIPALITIES),
-                                                             getVar(MAIN_PLACES), getVar(SUB_PLACES), snapshotDoc);
-                let addListing = true;
                 
-                // Given the Firestore limitations, the price range filters could not be added to the query.
-                // The solution is to filter according to the scheme below.
-                if (priceFrom !== null)
+                const myListing = await transformListingData(provinces, municipalities,
+                                                             mainPlaces, subPlaces, snapshotDoc);
+                let addListing = true;
+
+                /* Given the Firestore limitations, the price range filters could not be added to the query.
+                   This would have required a huge index, more than one of them for the different range of search criteria.
+                   This a challenge with filters/clauses involving inequality >=, > and <= and < comparisons.
+                   The solution is to apply price filter within code, as below... */
+                if (priceFrom)
                     addListing = (myListing.currentPrice >= priceFrom);
-                if (priceFrom !== null)
+                if (priceFrom)
                     addListing = addListing && (myListing.currentPrice <= priceTo);
 
-                if (addListing)
+                // Similar to reasons given on the previous comment. We will apply offer filter within code.
+                if (addListing && offersOnly)
+                    addListing = (myListing.priceInfo.offer.expiryDate >= new Date());
+
+                if (addListing) {
                     theListings.push(myListing);
+                }
             } // for (const index in snapshotDocs) {
         } while (theListings.length < numDocsToFetch);
 
-        const updatedListings = listings.concat(theListings);
-        if (!varExists(LISTINGS))
-            addVar(LISTINGS, updatedListings);
+        const updatedListings = existingListings.concat(theListings);
+        if (!varExists(VarNames.LISTINGS))
+            addVar(VarNames.LISTINGS, updatedListings);
         else
-            updateVar(LISTINGS, updatedListings);
+            updateVar(VarNames.LISTINGS, updatedListings);
 
+        console.log({existingListings, theListings});
+        setListings([...updatedListings]);
         setListingsLoaded(true);
     } // function loadListings()
  
@@ -952,88 +1023,56 @@ function Listings() {
 
 
     async function call() {
-        if (!varExists(PROVINCES))
-            addVar(PROVINCES, []);
-        if (!varExists(MUNICIPALITIES))
-            addVar(MUNICIPALITIES, []);
-        if (!varExists(MAIN_PLACES))
-            addVar(MAIN_PLACES, []);
-        if (!varExists(SUB_PLACES))
-            addVar(SUB_PLACES, []);
-        if (!varExists(PAGE_NUM))
-            addVar(PAGE_NUM, 1);
-
-        if (!varExists(LISTINGS)) {
-            addVar(LISTINGS, []);
+        if (!varExists(VarNames.PROVINCES))
+            addVar(VarNames.PROVINCES, []);
+        if (!varExists(VarNames.MUNICIPALITIES))
+            addVar(VarNames.MUNICIPALITIES, []);
+        if (!varExists(VarNames.MAIN_PLACES))
+            addVar(VarNames.MAIN_PLACES, []);
+        if (!varExists(VarNames.SUB_PLACES))
+            addVar(VarNames.SUB_PLACES, []);
+        if (!varExists(VarNames.TRANSACTION_TYPES))
+            addVar(VarNames.TRANSACTION_TYPES, []);
+        if (!varExists(VarNames.PROPERTY_TYPES))
+            addVar(VarNames.PROPERTY_TYPES, []);
+        if (!varExists(VarNames.NUMBER_OF_BEDROOMS))
+            addVar(VarNames.NUMBER_OF_BEDROOMS, []);
+        if (!varExists(VarNames.OFFERS_ONLY))
+            addVar(VarNames.OFFERS_ONLY, false);
+        if (!varExists(VarNames.PAGE_NUM))
+            addVar(VarNames.PAGE_NUM, 1);
+        if (!varExists(VarNames.LISTINGS)) {
+            console.log('addVar(VarNames.LISTINGS, []);');
+            addVar(VarNames.LISTINGS, []);
             load();
-        } // if (!varExists(NUMBER_OF_DOCS))
-        else { /* Caters for situations where user returns to this page from search or explore pages.
-                  It is required to reload the listings data.
-                */
-            const prevListings = getVar(LISTINGS);
-            const prevLocations = getLocations();            
-            let reload = false;
-            if (['/search/all', '/search/offers']
-                .includes(prevLocations[1]))
-                reload = true;
-            else if (prevLocations[1] === `/explore/${params.provincialCode}`){
-                // If the user comes from the Explore Province page. '/explore/{provincialCode}',
-                // and has clicked a main place different to the one currently chosen, then the listings must be reloaded.
-                const previous2 = prevLocations[2].split('/'); // Looking for ['', 'explore', provincialCode, municipalityCode, mainPlaceCode]
-                if (previous2.length >= 5) {
-                    if (previous2[2] !== params.provincialCode 
-                        || previous2[3] !== params.municipalityCode
-                        || previous2[4] !== params.mainPlaceCode)
-                        reload = true;
-                }
-            }
-            if (reload) {
-                updateVar(LISTINGS, []);
-                updateVar(PAGE_NUM, 1);
-                load();                    
-            }
-            else {
-                if (prevListings.length === 0) {
-                    updateVar(LISTINGS, []);
-                    updateVar(PAGE_NUM, 1);
-                    load();
-                } // if (prevListings.length === 0) {
-                else {
-                    setListings(prevListings);
-                    setPagination(prevListings.length);
-                    setPageNum(getVar(PAGE_NUM));
-                    let lastDoc = prevListings[prevListings.length - 1];
-                    lastDocRef.current = await getDocumentSnapshot(`/listings/${lastDoc.listingId}`);
+        } // if (!varExists(VarNames.PROVINCES))
+        else {
+            const prevListings = getVar(VarNames.LISTINGS);
 
-                    if (lastDocRef.current !== null)
-                        recreateQueryListener();
-                }
+            if (prevListings.length === 0) {
+                load();
+            } // if (prevListings.length === 0) {
+            else {
+                setListings(prevListings);
+                setPagination(prevListings.length);
+                setPageNum(getVar(VarNames.PAGE_NUM));
+                let lastDoc = prevListings[prevListings.length - 1];
+                lastDocRef.current = await getDocumentSnapshot(`/listings/${lastDoc.listingId}`);
+
+                if (lastDocRef.current !== null)
+                    recreateQueryListener();
             } // else
 
         } // else
 
-        if (!varExists(CLICKED_LISTING))
-            addVar(CLICKED_LISTING, null);
+        if (!varExists(VarNames.CLICKED_LISTING))
+            addVar(VarNames.CLICKED_LISTING, null);
     } // async function call()
 
     useEffect(() => {
         if (firstRenderRef.current === true) { // This is to prevent multiple re-renders/re-runs of the effect.
             setListingsLoaded(false);
-
-            if (!varExists(GET_LISTINGS_QUERY_OBJECT)) {
-                /** Handle situations in which the user did not start from any of the explore or search pages to get to this page.
-                 * In this instance take the user to the appropriate explore page.
-                 */
-                if (currLocation === '/search/offers/listings') // currLocation - current location (url).
-                    navigate('/search/offers');
-                else if (currLocation === '/search/all/listings')
-                    navigate('/search/all');
-                else if (currLocation.startsWith('/explore/'))
-                    navigate('/');
-            }
-            else {
-                call();
-            }
+            call();
             setListingsLoaded(true);
         } // if (firstRenderRef.current === true) {
         firstRenderRef.current = false;
@@ -1058,7 +1097,7 @@ function Listings() {
                                     .slice((pageNum - 1) * numDocsToFetch, pageNum * numDocsToFetch)
                                     .map(listing=> 
                                         (
-                                            <NavLink onClick={e=> goToListing(listing)} key={listing.listingId}>
+                                            <Link onClick={e=> goToListing(listing)} key={listing.listingId}>
                                                 <div className="w3-card-4 w3-margin-right w3-margin-top w3-margin-bottom"
                                                     style={{marginLeft: '1.25px', width: '250px', height: 'fit-content', display: 'inline-block', verticalAlign: 'top'}}>
                                                     <div className='w3-container w3-center'>
@@ -1092,7 +1131,7 @@ function Listings() {
                                                         {listing.address.provinceName}<br/>           
                                                     </div>
                                                 </div>                                    
-                                            </NavLink>
+                                            </Link>
                                         )
                                     )
                                 }
@@ -1103,10 +1142,10 @@ function Listings() {
                                     {
                                         generateSeqArray(numPages).map(anInteger=>
                                             (
-                                                <NavLink className="w3-btn w3-round w3-margin-small" key={anInteger} style={(pageNum === anInteger)?
+                                                <Link className="w3-btn w3-round w3-margin-small" key={anInteger} style={(pageNum === anInteger)?
                                                          selectedItemStyle : w3ThemeD5} onClick={e=> (pageNum !== anInteger && setPageNum(anInteger))}>
                                                     {anInteger}
-                                                </NavLink>
+                                                </Link>
                                             )
                                         )
                                     }
@@ -1115,18 +1154,13 @@ function Listings() {
                             
                             {(pageNum === numPages) &&
                                 <p>
-                                    <NavLink className="w3-btn w3-round w3-theme-d5" onClick={e=> load()}>Load more...</NavLink>
+                                    <Link className="w3-btn w3-round w3-theme-d5" onClick={e=> load()}>Load more...</Link>
                                 </p>
                             }
                         </div>
                         :
                         <p>
                             No listings ...
-                        </p>
-                    }
-                    {currLocation !== '/my-profile/listings' &&
-                        <p>
-                            <NavLink className="w3-btn w3-round w3-theme-d5"  to={backTo.link}>{backTo.text}</NavLink>
                         </p>
                     }
                 </>

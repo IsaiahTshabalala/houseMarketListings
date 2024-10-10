@@ -6,25 +6,24 @@
  * 2023/07/26  ITA   Genesis.
  * 2024/06/10  ITA   Add header commment
  *                   Navlinks to appear as buttons.
+ * 2024/09/17  ITA   Import context directly. Sign-in dispatch actions removed, since they are auto-performed by the top-most component (CurrentUserState) of this web app.
  */
-import { NavLink, useNavigate } from 'react-router-dom';
-import { useState, useContext } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../config/appConfig';
 import { ToastContainer, toast } from 'react-toastify';
 import toastifyTheme from './toastifyTheme';
-import { userContext } from '../hooks/UserProvider'; // For getting and setting state: current user.
 import SignInSMSVerification from './SignInSMSVerification';
-import { displayedComponentContext } from './SignIn';
+import { useDisplayedComponentContext } from './SignIn';
 
 const thisComponentName = 'SignInEmail';
 
 function SignInEmail() {
     const navigate = useNavigate();
     const [formData, setFormData] = useState({email: '', password: ''});
-    const { userDispatch } = useContext(userContext);
     const [ multiFactorError, setMultiFactorError ] = useState(null);
-    const { displayOnlyComponent, resetDisplay} = useContext(displayedComponentContext);
+    const { displayOnlyComponent, resetDisplay} = useDisplayedComponentContext();
     
     function handleChange(e) {
         setFormData(prev=> {
@@ -46,7 +45,6 @@ function SignInEmail() {
             if (auth.currentUser !== null) {
                 if ('emailVerified' in auth.currentUser) {
                     if (auth.currentUser.emailVerified) {
-                        userDispatch({type: 'SIGN_USER_IN', payload: auth.currentUser});
                         navigate('/');
                     } // if (auth.currentUser.emailVerified)
                     else
@@ -117,8 +115,8 @@ function SignInEmail() {
                     <>
                     {multiFactorError === null &&
                         <p>
-                            <NavLink className='w3-btn w3-round w3-margin w3-center w3-theme-d5' to='/forgot-password'>Forgot Password</NavLink>
-                            <NavLink className='w3-btn w3-round w3-margin w3-center w3-theme-d5' to='/register'>Register</NavLink>
+                            <Link className='w3-btn w3-round w3-margin w3-center w3-theme-d5' to='/forgot-password'>Forgot Password</Link>
+                            <Link className='w3-btn w3-round w3-margin w3-center w3-theme-d5' to='/register'>Register</Link>
                         </p>
                     }
                     </>

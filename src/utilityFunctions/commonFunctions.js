@@ -14,6 +14,7 @@
  *                            as well as comparison of values (primitive and object types).
  * 2024/08/14   ITA  1.04     Provide the alternative formatting to the prices. The previously used method is not consistent across browsers.
  * 2024/08/15   ITA  1.05     Currency format: replace ZAR with R. Ths is better suited for local purposes.
+ * 2024/10/19   ITA  1.06     Add hasAll and hasOnly functions, to be able to validate objects for presence of certain fields.
  */
 const loDash = require('lodash');
 
@@ -480,3 +481,48 @@ export function objCompare(obj1, obj2, ...comparisonFields) {
     } // for (const field in comparisonFields) {
     return 0;
 } // function comparison(obj1, obj2, ...comparisonFields) {
+
+/**
+ * Determine whether an object contains only 1 or more of the specified fields, and not any other fields.
+ * @param {*} anObject a Javascript object.
+ * @param  {...string} fields one or more field names.
+ * @returns boolean.
+ */
+export function hasOnly(anObject, ...fields) {
+    if (!fields || !fields.length)
+        throw new Error('fields must be specified');
+
+    const paths = getPaths(anObject);
+    for (const index in paths) {
+        const path = paths[index];
+
+        if (!fields.includes(path))
+            return false;
+    } // for (const index in paths)
+
+    return true;
+}
+
+/**
+ * Determine whether an object contains all of the specified fields.
+ * @param {*} anObject a Javascript object.
+ * @param  {...string} fields one or field names.
+ * @returns boolean.
+ */
+export function hasAll(anObject, ...fields) {
+    if (!fields || !fields.length)
+        throw new Error('fields must be specified');
+
+    const paths = getPaths(anObject);
+    let count = 0;
+    for (const index in fields) {
+        const field = fields[index];
+
+        if (!paths.includes(field))
+            return false;
+        else
+            count++;
+    } // for (const index in paths)
+
+    return (count === fields.length);
+}

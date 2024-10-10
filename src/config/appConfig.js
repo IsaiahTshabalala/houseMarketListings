@@ -46,7 +46,7 @@ const db = getFirestore(app);
 
 const storage = getStorage(app);
 
-if (location === 'local') { // Setup options to use Firebase local emulators instead of Google Firebase.
+if (location.toLowerCase() === 'local') { // Setup options to use Firebase local emulators instead of Google Firebase.
     // Connect to local Authentication emulator.
     connectAuthEmulator(auth, "http://127.0.0.1:9099");
 

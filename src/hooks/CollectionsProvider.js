@@ -15,8 +15,9 @@
  *                            Replace the JSON.stringify comparison and use a proper comparison function instead.
  * 2024/08/07  ITA   1.04     Collections reference to retain the same reference as collections are added to it. To reduce re-renders of components wrapped in it.
  *                            Ensure that the maximum number of selections parameter is passed down during the construction of a collection object.
+ * 2024/09/18  ITA   1.05     Export ready-made context, eliminating the need for components using this context to call useContext.
 */
-import { createContext, useRef } from 'react';
+import { createContext, useContext, useRef } from 'react';
 import PropTypes from 'prop-types';
 import { objCompare, compare, getPaths } from '../utilityFunctions/commonFunctions';
 
@@ -110,9 +111,11 @@ function CollectionsProvider({children}) {
 CollectionsProvider.propTypes = {
     children: PropTypes.element.isRequired
 };
-
 export default CollectionsProvider;
-export { collectionsContext };
+
+export function useCollectionsContext() {
+    return useContext(collectionsContext);
+}
 
 /**The Collection class.
  * Stores array of related object items to be displayed and selected with single and multi-selection dropdown components.

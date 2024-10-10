@@ -4,17 +4,20 @@
  *          If the user has not completed registration, then provide the link to the registration page.
  * Date        Dev  Version  Description
  * 2024/04/05  ITA  1.00     Genesis.
+ * 2024/09/18  ITA  1.01     Import context directly. Current User state moved to Global State.
+ *                           Use Link instead of NavLink for non-menu-item links.
  */
-import { useContext, useState } from 'react';
-import { Navigate, NavLink } from 'react-router-dom';
-import { isSignedIn } from '../config/appConfig.js';
+import { useState } from 'react';
+import { Navigate, Link } from 'react-router-dom';
+import { isSignedIn } from '../config/appConfig';
 import PropTypes from 'prop-types';
-import { userContext } from '../hooks/UserProvider.js';
-import ErrorAlert from './ErrorAlert.js';
+import { useGlobalStateContext } from '../hooks/GlobalStateProvider';
+import ErrorAlert from './ErrorAlert';
 
 function Registered({children}) {
-    const { currentUser } = useContext(userContext);
-    const [user, setUser] = useState(()=> {
+    const { getSlice } = useGlobalStateContext();
+    const [currentUser] = useState(getSlice('authCurrentUser'));
+    const [user] = useState(()=> {
         const signedIn = isSignedIn();
         const registered = currentUser?.personalDetails !== undefined;
         return {
@@ -34,7 +37,7 @@ function Registered({children}) {
                     <>
                         <ErrorAlert message='You must complete your registration to be able to view this page!'/>
                         <div className='w3-margin'>
-                            <NavLink className='w3-btn w3-round w3-theme-d5' to='/my-profile/account'>Click here to complete registration</NavLink>
+                            <Link className='w3-btn w3-round w3-theme-d5' to='/my-profile/account'>Click here to complete registration</Link>
                         </div>
                     </>
                 }

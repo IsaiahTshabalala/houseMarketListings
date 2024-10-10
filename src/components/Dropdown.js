@@ -7,11 +7,14 @@
  * Date        Dev   Version   Description
  * 2023/12/19  ITA   1.00      Genesis.
  * 2024/06/18  ITA   1.01      Add the version number.
+ * 2024/09/17  ITA   1.02      Toggle (add/remove) class name (w3-show) for displaying list items. Remove the style attribute.
+ *                             Adjust width and add borders.
+ *                             Import context directly.
  */
 import PropTypes from 'prop-types';
-import { useState, useEffect, useContext, memo } from 'react';
+import { useState, useEffect, memo } from 'react';
 import { RiArrowDropUpLine, RiArrowDropDownLine } from "react-icons/ri";
-import { collectionsContext } from '../hooks/CollectionsProvider';
+import { useCollectionsContext } from '../hooks/CollectionsProvider';
 import { toast } from 'react-toastify';
 import toastifyTheme from './toastifyTheme';
 
@@ -20,11 +23,9 @@ function Dropdown({label, // label with which to describe the dropdown.
                     onItemSelected = null, // function to pass on the value of the selected item to the parent component
                     isDisabled=false})
 {
-    const { getCollectionData, setSelected, getSelected } = useContext(collectionsContext);
+    const { getCollectionData, setSelected, getSelected } = useCollectionsContext();
 
-    const [w3ShowList, setW3ShowList] = useState(null); // Styling to enable the list of items to show or disappear.
-                                                        // Will alernate between 2 values as the Dropdown gains or losses focus
-                                                        // And also when an item is selected.
+    const [showItems, setShowItems] = useState(false); // true or false. Show or hide dropdown items.
     const [searchText, setSearchText] = useState('');
     const [list, setList] = useState([]);
 
@@ -64,21 +65,19 @@ function Dropdown({label, // label with which to describe the dropdown.
     } // function handleItemClick(e) {
 
     function toggleShowList() {
-        if (w3ShowList === null)
-            setW3ShowList({display: 'block'});
+        if (!showItems)
+            showList();
         else
-            setW3ShowList(null);
+            hideList();
     } // function toggleShowList() {
 
     function hideList() {
-        setW3ShowList(null);
+        setShowItems(false);
     }
 
     function showList() {
-        if (list.length === 0)
-            setW3ShowList(null);
-        else
-            setW3ShowList({display: 'block'});
+        if (list.length > 0)
+            setShowItems(true);
     } // function showList() {
 
     useEffect(()=> {        
@@ -88,6 +87,7 @@ function Dropdown({label, // label with which to describe the dropdown.
                 aList = getCollectionData(collectionName);
                 setList(aList);
                 const result = getSelected(collectionName);
+                console.log({result});
                 if (result.length > 0)
                     setSearchText(result[0]);
                 else
@@ -100,10 +100,10 @@ function Dropdown({label, // label with which to describe the dropdown.
     }, []); // useEffect(()=> {
 
     return (
-        <div style={isDisabled? { pointerEvents: 'none'}: {}}>
+        <div className='w3-border w3-round w3-padding-small' style={isDisabled? { pointerEvents: 'none'}: {}}>
             <label htmlFor='searchDropDown w3-padding-small'>{label}</label>
             <div className='w3-padding-small'>
-                <div className='side-by-side' style={{width: '80%'}}>
+                <div className='side-by-side' style={{width: '90%'}}>
                     <input className={`w3-input-theme-1 w3-input`} autoComplete='off'
                             type='text' id='searchDropDown' name='searchDropDown'
                             aria-label={`Type to Search for ${label}`} aria-required={true} onChange={e=> handleSearch(e)}
@@ -112,14 +112,13 @@ function Dropdown({label, // label with which to describe the dropdown.
                 </div>
                 <div className='w3-xlarge side-by-side' onClick={e=> toggleShowList(e)}>
                     <b>
-                        {w3ShowList === null? <RiArrowDropDownLine/> : <RiArrowDropUpLine/>}
+                        {!showItems? <RiArrowDropDownLine/> : <RiArrowDropUpLine/>}
                     </b>
                 </div>
             </div>
 
             <div className=' w3-padding-small'>
-                <div className='w3-input-theme-1 w3-margin-left w3-dropdown-content w3-bar-block w3-border' id='dropDown' name='dropDown' disabled={isDisabled} aria-label={label} 
-                         style={w3ShowList}>
+                <div className={`w3-input-theme-1 w3-margin-left w3-dropdown-content w3-bar-block w3-border ${showItems && 'w3-show'}`} id='dropDown' name='dropDown' disabled={isDisabled} aria-label={label} >
                     {list.map((item, index)=> {
                             return (
                                 <div className='w3-bar-item w3-button' name={item} key={item} aria-label={item}

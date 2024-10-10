@@ -6,8 +6,9 @@
  * Date         Dev  Version  Description
  * 2024/05/23   ITA  1.00     Genesis.
  * 2024/07/09   ITA  1.01     REPORT THIS LISTING option to disappear if the listing has been reported.
+ * 2024/09/18   ITA  1.01     Import context directly.
  */
-import { useContext, useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { FaFlag, FaCheck, FaTimes, FaTimesCircle } from 'react-icons/fa';
 import { MdOutlineReportProblem } from "react-icons/md";
@@ -15,21 +16,22 @@ import { toast, ToastContainer } from 'react-toastify';
 import toastifyTheme from "./toastifyTheme";
 import { addDoc, collection, doc, updateDoc, Timestamp } from 'firebase/firestore';
 import { db, isModerator } from '../config/appConfig';
-import { REPORTS, CLICKED_LISTING } from "../utilityFunctions/firestoreComms";
-import { sharedVarsContext } from "../hooks/SharedVarsProvider";
-import { userContext } from "../hooks/UserProvider";
+import { VarNames } from "../utilityFunctions/firestoreComms";
+import { useSharedVarsContext } from "../hooks/SharedVarsProvider";
+import { useGlobalStateContext } from "../hooks/GlobalStateProvider";
 import Loader from "./Loader";
 import { binarySearch, compare } from "../utilityFunctions/commonFunctions";
 
 function ReportOrFlag() {
-    const {varExists, getVar, updateVar, addVar} = useContext(sharedVarsContext);
-    const {currentUser} = useContext(userContext);
+    const {varExists, getVar, updateVar, addVar} = useSharedVarsContext();
+    const {getSlice} = useGlobalStateContext();
+    const {currentUser} = useState(getSlice('authCurrentUser'));
     const [modalOn, setModalOn] = useState(false);
     const [isReported, setIsReported] = useState(false);
     const reportingReasons = ['Hate speech', 'Threatening / Violence', 'Graphic or Disturbing Content',
                               'Fraud / Scam', 'Spam',  'Drugs', 'Sex or Adult Content', 'Other'].sort();
     const [reportingReason, setReportingReason] = useState(reportingReasons[0]);
-    const [listing, setListing] = useState(getVar(CLICKED_LISTING));    
+    const [listing, setListing] = useState(getVar(VarNames.CLICKED_LISTING));    
     const [ flagged, setFlagged] = useState(null);
     const [submitted, setSubmitted] = useState(true);
     const location = useLocation();
@@ -64,7 +66,7 @@ function ReportOrFlag() {
                 toast.success(`${flagListing? 'Listing flagged.' : 'Listing unflagged.'}`, toastifyTheme);
                 listingUpdate = {...listing, flagged: flagListing};
                 setListing(listingUpdate);
-                updateVar(CLICKED_LISTING, listingUpdate);
+                updateVar(VarNames.CLICKED_LISTING, listingUpdate);
             } catch (error) {
                 console.log(error);
                 toast.error(`Could not ${flagListing? 'flag' : 'unflag'} listing at this time.`);
@@ -74,9 +76,8 @@ function ReportOrFlag() {
         try {
             // Slice out the reports on this listing, and update them according to the listing review result.
             let reports = null;
-            if (varExists(REPORTS)) {
-                const comparisonField = 'listingId asc';
-                reports = getVar(REPORTS).filter(report=> {
+            if (varExists(VarNames.REPORTS)) {
+                reports = getVar(VarNames.REPORTS).filter(report=> {
                     return report.listingId === listing.listingId;
                 });
                 let listingReports = reports.filter(report=> report.listingId === listing.listingId);
@@ -88,7 +89,7 @@ function ReportOrFlag() {
                     let outcome = {
                         reviewed: true,
                         reviewDate: Timestamp.fromDate(new Date()),
-                        moderatorId: currentUser.authCurrentUser.uid,
+                        moderatorId: currentUser.uid,
                         result: (flagListing? 'flagged' : 'not flagged')
                     };
 
@@ -98,7 +99,7 @@ function ReportOrFlag() {
 
                 if (listingReports.length > 0) {
                     toast.success('Review submitted!', toastifyTheme);
-                    updateVar(REPORTS, reports.filter(report=> (report.listingId !== listing.listingId)));
+                    updateVar(VarNames.REPORTS, reports.filter(report=> (report.listingId !== listing.listingId)));
                 } // if (listingReports.length > 0) {
             }
         } catch (error) {
@@ -112,10 +113,10 @@ function ReportOrFlag() {
 
     useEffect(()=> {
         if (!varExists(REPORTED_LISTINGS)) {
-            addVar(REPORTED_LISTINGS, []);
+            addVar(VarNames.REPORTED_LISTINGS, []);
         } // if (!varExists(REPORTED_LISTINGS)) {
         else {
-            const repListings = [...getVar(REPORTED_LISTINGS)];
+            const repListings = [...getVar(VarNames.REPORTED_LISTINGS)];
             const index = repListings.findIndex(repListing=> (repListing === listing.listingId));
             setIsReported(index >= 0); // The listing has been reported.
         } // else
@@ -136,7 +137,7 @@ function ReportOrFlag() {
         const docRef = collection(db, `/listings/${listing.listingId}/reports/`);
         try {
             await addDoc(docRef, reportData);
-            const repListings = [...getVar(REPORTED_LISTINGS)];
+            const repListings = [...getVar(VarNames.REPORTED_LISTINGS)];
             const index = binarySearch(repListings, listing.listingId, 0, 'asc');
             let comparison = null;
     
@@ -155,7 +156,7 @@ function ReportOrFlag() {
                 repListings.push(listing.listingId);
     
             setIsReported(true);            
-            updateVar(REPORTED_LISTINGS, repListings);                
+            updateVar(VarNames.REPORTED_LISTINGS, repListings);                
     
             toast.success('Thank you for your report. This listing will be reviewed and appropriate action taken.',
                             toastifyTheme);

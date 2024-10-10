@@ -1,23 +1,40 @@
-import { useState, useContext } from "react";
+/**
+ * File: ./components/OtherSignInOptions.js
+ * Description: Provide user with sign options involving authentication providers like Google, etc
+ * Date        Dev   Version  Description
+ * 2024/09/18  ITA   1.01     Import context directly.
+ * 2024/10/10  ITA   1.02     Provide the pipe dilimited list of OAuth providers in the .env file.
+ *                            This enables one to turn on/off OAuth providers as per what can be afforded.
+ *                            Remove the dispatch actions, since they are automatically performed by the top-most, CurrentUserState component of this web application.
+ */
+import { useState } from "react";
 import { signInWithPopup, GoogleAuthProvider, FacebookAuthProvider, OAuthProvider } from "firebase/auth";
 import { auth } from '../config/appConfig.js';
 import { useNavigate } from 'react-router-dom';
 import { BsGoogle, BsFacebook } from 'react-icons/bs';
 import { FaYahoo } from 'react-icons/fa';
-import { userContext } from "../hooks/UserProvider.js";
 import { toast, ToastContainer } from 'react-toastify';
 import toastifyTheme from "./toastifyTheme.js";
 import SignInSMSVerification from "./SignInSMSVerification.js";
-import { displayedComponentContext } from './SignIn';
+import { useDisplayedComponentContext } from './SignIn';
 
 const thisComponentName = 'OtherSignInOptions';
 
 function OtherSignInOptions() {
-    const { userDispatch } = useContext(userContext);
     const [multiFactorError, setMultiFactorError] = useState(null);
     const [providerName, setProviderName] = useState(null);
-    const { displayOnlyComponent, resetDisplay } = useContext(displayedComponentContext);
+    const { displayOnlyComponent, resetDisplay } = useDisplayedComponentContext();
     const navigate = useNavigate();
+
+    const envParams = (()=> {
+      // Pipe delimited list of OAuth Providers.
+      let oAuthProviders = process.env.REACT_APP_OAUTH_PROVIDERS? process.env.REACT_APP_OAUTH_PROVIDERS.toLowerCase() : ''; // Get the pipe delimited list of oAuth providers.
+      oAuthProviders = oAuthProviders.split('|');
+
+      return Object.freeze({
+        oAuthProviders
+      });
+    })();    
 
     function getProviderIcon() {
       switch(providerName) {
@@ -55,12 +72,11 @@ function OtherSignInOptions() {
       signInWithPopup(auth, provider)
       .then((result) => {        
         // Update the currentUser state with the signed-in user info.
-        userDispatch({type: 'SIGN_USER_IN', payload: result.user});
-        navigate('/');
+        navigate('/'); // Go to home page.
       }).catch((error) => {
         if (error.code === 'auth/multi-factor-auth-required') {
-          displayOnlyComponent(thisComponentName);
-          setMultiFactorError(error);
+            displayOnlyComponent(thisComponentName);
+            setMultiFactorError(error);
         } // else if (error.code === 'auth/multi-factor-auth-required')
         else {
           const theError = 'code' in error? error.code + '. ' + error : error;
@@ -79,30 +95,41 @@ function OtherSignInOptions() {
           <>
             {multiFactorError === null?
               <>
-                  <p className='w3-margin'>Continue with</p>
-                  <div>
-                    <div className='w3-margin side-by-side'>
-                      <button className='w3-btn w3-round w3-theme-d5' type='button' onClick={e=> signIn('google')}>
-                          <span><BsGoogle/></span>
-                      </button>
-                    </div>
-                    
-                    <div className='w3-margin side-by-side'>
-                      <button className='w3-btn w3-round w3-theme-d5' type='button' onClick={e=> signIn('facebook')}>
-                          <span><BsFacebook/></span>
-                      </button>              
-                    </div>
-                    
-                    <div className='w3-margin side-by-side'>                  
-                      <button className='w3-btn w3-round w3-theme-d5' type='button' onClick={e=> signIn('yahoo')}>
-                        <span><FaYahoo/></span>
-                      </button>
-                    </div>
-                  </div>
+                  {(envParams.oAuthProviders.length > 0) &&
+                    <>
+                      <p className='w3-margin'>Continue with</p>
+                  
+                      <div>                      
+                        {envParams.oAuthProviders.includes('google') &&
+                          <div className='w3-margin side-by-side'>
+                            <button className='w3-btn w3-round w3-theme-d5' type='button' onClick={e=> signIn('google')}>
+                                <span><BsGoogle/></span>
+                            </button>
+                          </div>
+                        }
+
+                        {envParams.oAuthProviders.includes('facebook') &&
+                          <div className='w3-margin side-by-side'>
+                            <button className='w3-btn w3-round w3-theme-d5' type='button' onClick={e=> signIn('facebook')}>
+                                <span><BsFacebook/></span>
+                            </button>              
+                          </div>
+                        }
+
+                        {envParams.oAuthProviders.includes('yahoo') &&                      
+                          <div className='w3-margin side-by-side'>                  
+                            <button className='w3-btn w3-round w3-theme-d5' type='button' onClick={e=> signIn('yahoo')}>
+                              <span><FaYahoo/></span>
+                            </button>
+                          </div>
+                        }
+                      </div>
+                    </>
+                  } 
               </>
               :
               <>
-                <h2>{getProviderIcon()} Continue with {providerName}</h2>
+                <h2 className='w3-margin-top w3-padding'>{getProviderIcon()} Continue with {providerName}</h2>
                 <SignInSMSVerification multiFactorError={multiFactorError}/>
                 <p>
                   <button className='w3-margin w3-btn w3-round w3-theme-d5' type='button' 

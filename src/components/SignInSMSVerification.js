@@ -7,15 +7,16 @@
  * 2023/12/07  ITA   1.00     Genesis
  * 2024/06/10  ITA   1.01     Add header comment.
  *                            The Navlinks to appear as buttons.
+ * 2024/09/11  ITA   1.01     Sign-in dispatch action removed, since it is automatically performed by the top-most, CurrentUserState component of this web application.
+ *                            Context to be imported directly.
  */
 import { getMultiFactorResolver, PhoneAuthProvider, 
          PhoneMultiFactorGenerator, RecaptchaVerifier } from 'firebase/auth';
-import { useState, useContext, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { auth } from '../config/appConfig.js';
 import { FaTimesCircle } from 'react-icons/fa';
 import { toast, ToastContainer } from 'react-toastify';
 import toastifyTheme from './toastifyTheme.js';
-import { userContext } from '../hooks/UserProvider.js'; // current user global state.
 import { NavLink, useNavigate } from 'react-router-dom';
 import PropTypes from 'prop-types';
 
@@ -38,7 +39,6 @@ function SignInSMSVerification({multiFactorError}) {
                                                         // This resolver will be created in useEffect on first render.
     const [pinCode, setPinCode] = useState('');
     const [modalOn, setModalOn] = useState(false);
-    const { userDispatch } = useContext(userContext);
     const navigate = useNavigate();
 
     function createResolverAndPhoneHintIndex() {
@@ -131,8 +131,7 @@ function SignInSMSVerification({multiFactorError}) {
             const multiFactorAssertion = PhoneMultiFactorGenerator.assertion(cred);
             
             // Complete sign-in ...
-            const userCredential = await resolver.resolveSignIn(multiFactorAssertion);
-            userDispatch({type: 'SIGN_USER_IN', payload: userCredential.user});
+            await resolver.resolveSignIn(multiFactorAssertion);
             toast.success('Congratulations! You have been signed in.', toastifyTheme);
             navigate('/');
             setVerificationId(null); // Clear the verificationId that was used up upon successful verification.

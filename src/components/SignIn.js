@@ -6,9 +6,10 @@
  * 2023/12/10  ITA   1.00     Genesis.
  * 2024/06/10  ITA   1.01     Add header comment. 
  *                            Change the links (NavLinks) to appear as buttons.
+ * 2024/09/18  ITA   1.02     Export context in ready-made form, eliminated the need for calling useContext where it is used.
  */
 import { NavLink, useNavigate } from 'react-router-dom';
-import { useState, createContext, useEffect } from 'react';
+import { useState, createContext, useContext, useEffect } from 'react';
 import SignInEmail from './SignInEmail';
 import { auth, isSignedIn } from '../config/appConfig';
 import OtherSignInOptions from './OtherSignInOptions';
@@ -70,4 +71,7 @@ function SignIn() {
 } // function SignIn() {
 
 export default SignIn;
-export {displayedComponentContext};
+
+export function useDisplayedComponentContext() {
+    return useContext(displayedComponentContext);
+}

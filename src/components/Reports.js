@@ -5,13 +5,13 @@
  * Date         Dev  Version  Description
  * 2024/05/09   ITA  1.00     Genesis
  * 2024/07/14   ITA  1.02     Maximum number of documents fetched from Firestore settable in the environment variables. Default: 10.
+ * 2024/09/19   ITA  1.03     Context to be imported directly.
  */
 import { getDocs, onSnapshot } from 'firebase/firestore';
-import { FetchTypes, getReportsToReviewQuery, REPORTS,
-         PROVINCES, MUNICIPALITIES, MAIN_PLACES, SUB_PLACES, getDocumentSnapshot,
-         CLICKED_LISTING, transformListingData } from '../utilityFunctions/firestoreComms';
-import { sharedVarsContext } from '../hooks/SharedVarsProvider';
-import { useEffect, useRef, useState, useContext } from "react";
+import { FetchTypes, getReportsToReviewQuery, VarNames, getDocumentSnapshot,
+         transformListingData } from '../utilityFunctions/firestoreComms';
+import { useSharedVarsContext } from '../hooks/SharedVarsProvider';
+import { useEffect, useRef, useState } from "react";
 import { NavLink, useNavigate } from 'react-router-dom';
 import { toast, ToastContainer } from 'react-toastify';
 import toastifyTheme from './toastifyTheme';
@@ -25,7 +25,7 @@ function Reports() {
     const reportsRef = useRef([]);
     const [reportsToDisplay, setReportsToDisplay] = useState([]);
     const [loadingMessage, setLoadingMessage] = useState(null);
-    const {varExists, addVar, getVar, updateVar} = useContext(sharedVarsContext);
+    const {varExists, addVar, getVar, updateVar} = useSharedVarsContext();
     const lastDocRef = useRef(null); // The position after which to perform the next fetching of data from Firestore.
                                      // Listening also to happen from first report doc up to this doc.
     const unSubscribeRef = useRef(null); // A listener for changes in Firestore, to the documents that were fetched.
@@ -44,8 +44,6 @@ function Reports() {
 
     const sortFields = ['listingId asc', 'reportId asc'];  // Fetched listings are expected to be sorted by listingId, then reportId.
     const repsToDisplaySortFields = ['listingId asc'];
-    const PAGE_NUM = 'pageNumber';
-    const REPORTS_TO_DISPLAY = 'reportsToDisplay';
 
     function generateSeqArray(pageCount) {
         const anArray = [];
@@ -93,8 +91,8 @@ function Reports() {
                                     qry, 
                                     async snapshot=> {
                                         setLoadingMessage('Loading reports. Please wait ...');
-                                        let theReports = [...getVar(REPORTS)];
-                                        let repsToDisplay = [...getVar(REPORTS_TO_DISPLAY)];
+                                        let theReports = [...getVar(VarNames.REPORTS)];
+                                        let repsToDisplay = [...getVar(VarNames.REPORTS_TO_DISPLAY)];
                                         const docChanges = snapshot.docChanges();
                                         for (const idx in docChanges) {
                                             const change = docChanges[idx];
@@ -169,8 +167,8 @@ function Reports() {
                                         } // for (const idx in docChanges) {
 
                                         setReportsToDisplay(repsToDisplay);
-                                        updateVar(REPORTS, [...theReports]);
-                                        updateVar(REPORTS_TO_DISPLAY, [...repsToDisplay]);
+                                        updateVar(VarNames.REPORTS, [...theReports]);
+                                        updateVar(VarNames.REPORTS_TO_DISPLAY, [...repsToDisplay]);
                                         reportsRef.current = [...theReports];
                                         
                                         setReportsToDisplay(repsToDisplay);                                        
@@ -244,8 +242,8 @@ function Reports() {
                 } // for (const idx in snapshotDocs) {                
             } while (counter < numDocsToFetch);
 
-            updateVar(REPORTS_TO_DISPLAY, [...repsToDisplay]);
-            updateVar(REPORTS, [...theReports]);
+            updateVar(VarNames.REPORTS_TO_DISPLAY, [...repsToDisplay]);
+            updateVar(VarNames.REPORTS, [...theReports]);
         } catch (error) {
             console.log(error);
             toast.error('Unable to load reports at this time.', toastifyTheme);
@@ -261,18 +259,18 @@ function Reports() {
         try {
             const snapshot = await getDocumentSnapshot(`/listings/${listingId}`);
             
-            if (!varExists(PROVINCES))
-                addVar(PROVINCES, []);
-            if (!varExists(MUNICIPALITIES))
-                addVar(MUNICIPALITIES, []);
-            if (!varExists(MAIN_PLACES))
-                addVar(MAIN_PLACES, []);
-            if (!varExists(SUB_PLACES))
-                addVar(SUB_PLACES, []);
-            const listing = await transformListingData(getVar(PROVINCES), getVar(MUNICIPALITIES),
-                                                        getVar(MAIN_PLACES), getVar(SUB_PLACES), snapshot);
-            updateVar(CLICKED_LISTING, listing);
-            updateVar(PAGE_NUM, pageNum);
+            if (!varExists(VarNames.PROVINCES))
+                addVar(VarNames.PROVINCES, []);
+            if (!varExists(VarNames.MUNICIPALITIES))
+                addVar(VarNames.MUNICIPALITIES, []);
+            if (!varExists(VarNames.MAIN_PLACES))
+                addVar(VarNames.MAIN_PLACES, []);
+            if (!varExists(VarNames.SUB_PLACES))
+                addVar(VarNames.SUB_PLACES, []);
+            const listing = await transformListingData(getVar(VarNames.PROVINCES), getVar(VarNames.MUNICIPALITIES),
+                                                        getVar(VarNames.MAIN_PLACES), getVar(VarNames.SUB_PLACES), snapshot);
+            updateVar(VarNames.CLICKED_LISTING, listing);
+            updateVar(VarNames.PAGE_NUM, pageNum);
             navigate(`/moderation/${listingId}`);
         } catch (error) {
             console.log(error);
@@ -283,23 +281,23 @@ function Reports() {
 
     async function get() {
         if (firstRenderRef.current === true) {
-            if (!varExists(REPORTS)) {
-                addVar(REPORTS, []);
-                addVar(CLICKED_LISTING, null);
-                addVar(PAGE_NUM, 1);
-                addVar(REPORTS_TO_DISPLAY, []);
+            if (!varExists(VarNames.REPORTS)) {
+                addVar(VarNames.REPORTS, []);
+                addVar(VarNames.CLICKED_LISTING, null);
+                addVar(VarNames.PAGE_NUM, 1);
+                addVar(VarNames.REPORTS_TO_DISPLAY, []);
                 await load();
-            } // if (!varExists(REPORTS)) {
+            } // if (!varExists(VarNames.REPORTS)) {
             else {
-                const prevReports = [...getVar(REPORTS)];
+                const prevReports = [...getVar(VarNames.REPORTS)];
                 if (prevReports.length === 0)
                     await load();
                 else {
                     reportsRef.current = prevReports;
                     const repsToDisplay = getObjArrayWithNoDuplicates(prevReports, true, ...repsToDisplaySortFields);
-                    updateVar(REPORTS_TO_DISPLAY, [...repsToDisplay]);
+                    updateVar(VarNames.REPORTS_TO_DISPLAY, [...repsToDisplay]);
                     setReportsToDisplay([...repsToDisplay]);                    
-                    setPageNum(getVar(PAGE_NUM));
+                    setPageNum(getVar(VarNames.PAGE_NUM));
                     setPagination(repsToDisplay.length);
                     
                     const lastReport = prevReports[prevReports.length - 1];                                                                                  

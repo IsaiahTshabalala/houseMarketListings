@@ -11,13 +11,16 @@
  *                            In keeping with the improved sorting mechanism in the CollectionsProvider, eliminate the sortField and instead use place names for sorting.
  * 2024/07/14   ITA  1.03     User to select prices via a dropdown, no longer to type the minimum and maximum prices.
  * 2024/08/07   ITA  1.04     The price ranges collection must be created as an array of objects, each with price range and index as properties.
- * 2024/08/14   ITA  1.05     Enhance the way prices (priceFrom and priceTo) values are obtained from the selected price range, in keeping with the updated currency formatting.
+ * 2024/08/14   ITA  1.05     Enhance the way prices (priceFrom and priceTo) values are ob137ained from the selected price range, in keeping with the updated currency formatting.
  * 2024/08/15   ITA  1.05     Replace ZAR with R.
+ * 2024/08/18   ITA  1.06     Import context directly. Variable names moved to VarNames object.
+ *              ITA  1.07     Property types, number of bedrooms, municipalities and main places are now optional filters.
+ *                            Component to call (notify) a parent component provided function after search data has been submitted.
  */
-import { useEffect, useState, useContext, useRef } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { collectionsContext } from '../hooks/CollectionsProvider';
-import { sharedVarsContext } from '../hooks/SharedVarsProvider';
+import { useEffect, useState, useRef } from 'react';
+import { RiArrowDropUpLine, RiArrowDropDownLine } from "react-icons/ri";
+import { useCollectionsContext } from '../hooks/CollectionsProvider';
+import { useSharedVarsContext } from '../hooks/SharedVarsProvider';
 import { ToastContainer, toast } from 'react-toastify';
 import { BiErrorCircle } from 'react-icons/bi';
 import { BsCheck } from 'react-icons/bs';
@@ -26,9 +29,9 @@ import MultiSelectionDropdown2 from './MultiSelectionDropdown2';
 import Dropdown from './Dropdown';
 import Dropdown2 from './Dropdown2';
 import { getAllProvinces, getMunicipalitiesOfTheProvinces, getMainPlacesOfTheMunicipalities,
-         transactionTypes, propertyTypes, numberOfBedrooms, PROVINCES, MUNICIPALITIES,
-         MAIN_PLACES, TRANSACTION_TYPES, PROPERTY_TYPES, NUMBER_OF_BEDROOMS, 
-         PRICE_FROM, PRICE_TO, PRICE_RANGES, salesPriceRanges, rentalPriceRanges, getListingsQueryObject, GET_LISTINGS_QUERY_OBJECT } from '../utilityFunctions/firestoreComms';
+         transactionTypes, propertyTypes, numberOfBedrooms, VarNames, salesPriceRanges, rentalPriceRanges,
+         QueryNames } from '../utilityFunctions/firestoreComms';
+import PropTypes from 'prop-types';         
 import Loader from './Loader';
 import toastifyTheme from './toastifyTheme';
 import { toZarCurrencyFormat } from '../utilityFunctions/commonFunctions';
@@ -36,15 +39,16 @@ const loDash = require('lodash');
 
 const keyStep = 0.001;
 
-function SearchListings() {
-    const navigate = useNavigate();
-    const location = useLocation();
+function SearchListings({
+    notify = null
+}) {
+    const [expanded, setExpanded] = useState(false);
     const { addCollection, updateCollection, getCollectionData, 
-            getSelected, setSelected, collectionExists } = useContext(collectionsContext);
-    const { addVar, updateVar, varExists, getVar } = useContext(sharedVarsContext);
+            getSelected, setSelected, collectionExists } = useCollectionsContext();
+    const { addVar, updateVar, varExists, getVar } = useSharedVarsContext();
     const [payRate, setPayRate] = useState('');
 
-    /**Set to false while the data of the respective dropdowns is being loaded, set to true thereafter. */
+    /**To set to false while the data of the respective dropdowns is being loaded, set to true thereafter. */
     const [transactionTypesLoaded, setTransactionTypesLoaded] = useState(true);
     const [propertyTypesLoaded, setPropertyTypesLoaded] = useState(true);
     const [numberOfBedroomsLoaded, setNumberOfBedroomsLoaded] = useState(true);
@@ -53,6 +57,8 @@ function SearchListings() {
     const [mainPlacesLoaded, setMainPlacesLoaded] = useState(true);
     const [queryComplete, setQueryComplete] = useState(true);
     const [priceRangesLoaded, setPriceRangesLoaded] = useState(true);
+    const [offersOnly, setOffersOnly] = useState(false);
+    const [numFilters, setNumFilters] = useState(0);
 
     /* The key variable below are set, in order to cause a re-render whenever the transaction
        types, property types, provinces, municipalities and main places dropdowns need to be reloaded
@@ -70,55 +76,63 @@ function SearchListings() {
     const [errors, setErrors] = useState({});
     const firstRenderRef = useRef(true);
 
-    function handleChange(e) {
-        validate();
-    } // function handleChange(e) {
-
     /** Validate user input.*/
     function validate() {
         const errorList = {};
         try {
-            // Check whether any provinces were selected.
-            let selectedProvinces = getSelected(PROVINCES);
-            
-            if (selectedProvinces.length === 0) // No province selected.
-                errorList[PROVINCES] = 'No provinces selected!';
-            
-            // Check whether any municipalities were selected.
-            let selectedMunicipalities = getSelected(MUNICIPALITIES);
-            
-            if (selectedMunicipalities.length === 0)
-                errorList[MUNICIPALITIES] = 'No municipalities selected!';
-
-            // Check whether any main places were selected.
-            let selectedMainPlaces = getSelected(MAIN_PLACES);            
-            if (selectedMainPlaces.length === 0)
-                errorList[MAIN_PLACES] = 'No main places selected!';
-            
+            let count = 0;
+            // Mandatory fields:
             // Check whether any transaction types were selected.
-            let selectedTransTypes = getSelected(TRANSACTION_TYPES);
+            let selectedTransTypes = getSelected(VarNames.TRANSACTION_TYPES);
             if (selectedTransTypes.length === 0)
-                errorList[TRANSACTION_TYPES] = 'No transaction types selected!';
-            
-            // Check whether any property types were selected.
-            let selectedPropertyTypes = getSelected(PROPERTY_TYPES);
-            if (selectedPropertyTypes.length === 0)
-                errorList[PROPERTY_TYPES] = 'No property types selected!';
-
-            // Check whether any number of bedrooms were selected.
-            let selectedNumBedrooms = getSelected(NUMBER_OF_BEDROOMS);
-
-            if (selectedNumBedrooms.length === 0)
-                errorList[NUMBER_OF_BEDROOMS] = 'No number of bedrooms selected!'
+                errorList[VarNames.TRANSACTION_TYPES] = 'No transaction types selected!';
+            else
+                count++;
 
             // Check whether a price range was selected.
-            let selectedPriceRanges = getSelected(PRICE_RANGES);
+            let selectedPriceRanges = getSelected(VarNames.PRICE_RANGES);
             if (selectedPriceRanges.length === 0)
-                errorList[PRICE_RANGES] = 'No price range selected!';
+                errorList[VarNames.PRICE_RANGES] = 'No price range selected!';
+            else
+                count++;
 
+            // Check whether any provinces were selected.
+            let selectedProvinces = getSelected(VarNames.PROVINCES);
+            
+            if (selectedProvinces.length === 0) // No province selected.
+                errorList[VarNames.PROVINCES] = 'No provinces selected!';
+            else
+                count++;
+            
+            // Optional fields:
+            // Check whether any property types were selected.
+            let selectedPropertyTypes = getSelected(VarNames.PROPERTY_TYPES);
+            if (selectedPropertyTypes.length > 0)
+                count++;
+            
+            // Check whether any municipalities were selected.
+            let selectedMunicipalities = getSelected(VarNames.MUNICIPALITIES);            
+            if (selectedMunicipalities.length > 0)
+                count++;
+
+            // Check whether any main places were selected.
+            const selectedMainPlaces = getSelected(VarNames.MAIN_PLACES);
+            if (selectedMainPlaces.length > 0)
+                count++;
+
+            // Check whether any number of bedrooms were selected.
+            const selectedNumBedrooms = getSelected(VarNames.NUMBER_OF_BEDROOMS);
+            if (selectedNumBedrooms.length > 0)
+                count++;
+
+            if (offersOnly)
+                count++;
+
+            setNumFilters(count);
             setErrors(errorList);            
             return (Object.keys(errorList).length === 0);
         } catch (error) { 
+            console.log(error);
             /* At this point of code execution, the collections have been set up, so the concern is here
                about whether a selection has been made on the collection, than whether the collection exists. */            
         }
@@ -128,10 +142,10 @@ function SearchListings() {
     async function provincesSelected() {
         try {
             // Get the currently selected provinces.
-            let selectedProvinces = getSelected(PROVINCES);
+            let selectedProvinces = getSelected(VarNames.PROVINCES);
 
             // Get the previously loaded municipalities...
-            let prevMunicipalities = getCollectionData(MUNICIPALITIES);        
+            let prevMunicipalities = getCollectionData(VarNames.MUNICIPALITIES);
             // Get the previously loaded municipalities that belong to the currently selected provinces.
             const municipalities = prevMunicipalities.filter(municipality=> {
                 return selectedProvinces.findIndex(province=> {
@@ -140,7 +154,7 @@ function SearchListings() {
             });
     
             // Get the main places that belong municipalities of the currently selected provinces.
-            let mainPlaces = getCollectionData(MAIN_PLACES);
+            let mainPlaces = getCollectionData(VarNames.MAIN_PLACES);
             mainPlaces = mainPlaces.filter(mainPlace=> {
                 return selectedProvinces.findIndex(province=> {
                     return province.code === mainPlace.provincialCode;
@@ -181,8 +195,8 @@ function SearchListings() {
                 });
 
             // Update the municipalities and mainplaces collections.
-            updateCollection(MUNICIPALITIES, [...municipalities, ...newMunicipalities]);
-            updateCollection(MAIN_PLACES, mainPlaces);
+            updateCollection(VarNames.MUNICIPALITIES, [...municipalities, ...newMunicipalities]);
+            updateCollection(VarNames.MAIN_PLACES, mainPlaces);
 
         } catch (error) {
             toast.error(error, toastifyTheme);
@@ -199,13 +213,13 @@ function SearchListings() {
     // Set the selected municipalities to the municipalities currently selected in the multi-selection dropdown.
         try {
             // Get the currently selected provinces
-            let selectedProvinces = getSelected(PROVINCES);
+            let selectedProvinces = getSelected(VarNames.PROVINCES);
 
             // Get the currently selected municipalities...
-            let selectedMunicipalities = getSelected(MUNICIPALITIES);
+            let selectedMunicipalities = getSelected(VarNames.MUNICIPALITIES);
             
             // Get the previously loaded main places...
-            let prevMainPlaces = getCollectionData(MAIN_PLACES);
+            let prevMainPlaces = getCollectionData(VarNames.MAIN_PLACES);
             
             // Get the main places whose municipalities are currently selected.----------------------------------------
             const mainPlaces = prevMainPlaces.filter(mainPlace=> {
@@ -262,7 +276,7 @@ function SearchListings() {
                     }); // .then(results)
 
             // Update the main places collection.
-            updateCollection(MAIN_PLACES, [...mainPlaces, ...newMainPlaces]);
+            updateCollection(VarNames.MAIN_PLACES, [...mainPlaces, ...newMainPlaces]);
 
         } catch (error) {
             toast.error(error, toastifyTheme);
@@ -276,9 +290,8 @@ function SearchListings() {
     /**Whenever a transaction type (sale/rent) is selected, re-load the approriate price ranges (sale/rent).
      */
     function transactionTypeSelected() {
-        const transactionType = getSelected(TRANSACTION_TYPES)[0];
+        const transactionType = getSelected(VarNames.TRANSACTION_TYPES)[0];
         let priceRanges;
-        setPriceRangesLoaded(false);
         if (transactionType === 'Sale') { // Load sales price ranges in the price ranges dropdown.
             priceRanges = salesPriceRanges;
             setPayRate('');
@@ -290,10 +303,20 @@ function SearchListings() {
 
         // Create an array of objects, each with a price range and index. So that the index may be used for sorting.
         priceRanges = priceRanges.map((priceRange, index)=> ({priceRange, index}));
-        updateCollection(PRICE_RANGES, priceRanges);
-        setPriceRangesLoaded(true);
+        updateCollection(VarNames.PRICE_RANGES, priceRanges);
         setPriceRangesKey(priceRangesKey + keyStep);
     } // function transactionTypeSelected()
+
+    function handleOffersOnlyChanged() {
+        let value = offersOnly;
+        setOffersOnly(!value);
+        updateVar(VarNames.OFFERS_ONLY, value);
+    }
+
+    function handleFilterButtonClicked() {
+        validate();
+        setExpanded(!expanded);
+    }
 
     function showErrorIcon(fieldPath) {
         return (
@@ -313,38 +336,45 @@ function SearchListings() {
     /* Prepare parameters for usage in the search query */
         e.preventDefault();
         if (!validate()) {
-            toast.error('Some validation errors occurred! Please check your input and try again.', toastifyTheme);
+            toast.error('Some validation errors occurred! Please check your filters and try again.', toastifyTheme);
             return;
         } // if (!validate()) {
 
         try {
+            let newKey = '';
             setQueryComplete(false);
             // Set the shared data between components.
-            let selectedProvinces = null;
-            selectedProvinces = getSelected(PROVINCES);            
-            updateVar(PROVINCES, selectedProvinces); 
-    
-            let selectedMunicipalities = null;
-            selectedMunicipalities = getSelected(MUNICIPALITIES);            
-            updateVar(MUNICIPALITIES, selectedMunicipalities);
+            
+            if (!varExists(VarNames.QUERY_NAME))
+                addVar(VarNames.QUERY_NAME, QueryNames.FILTERED_LISTINGS);
+            else
+                updateVar(VarNames.QUERY_NAME, QueryNames.FILTERED_LISTINGS);
 
-            let selectedMainPlaces = null;
-            selectedMainPlaces = getSelected(MAIN_PLACES);    
-            updateVar(MAIN_PLACES, selectedMainPlaces);
+            const selectedProvinces = [...getSelected(VarNames.PROVINCES)]; 
+            updateVar(VarNames.PROVINCES, selectedProvinces);
+            selectedProvinces.forEach(province=> newKey += province.code);
     
-            let selectedTransTypes = null;
-            selectedTransTypes = getSelected(TRANSACTION_TYPES);
-            updateVar(TRANSACTION_TYPES, selectedTransTypes);
+            const selectedMunicipalities = [...getSelected(VarNames.MUNICIPALITIES)]; 
+            updateVar(VarNames.MUNICIPALITIES, selectedMunicipalities);
+            selectedMunicipalities.forEach(municipality=> newKey += municipality.code);
 
-            let selectedPropTypes = null;
-            selectedPropTypes = getSelected(PROPERTY_TYPES);    
-            updateVar(PROPERTY_TYPES, selectedPropTypes);
+            const selectedMainPlaces = [...getSelected(VarNames.MAIN_PLACES)];
+            updateVar(VarNames.MAIN_PLACES, selectedMainPlaces);
+            selectedMainPlaces.forEach(mainPlace=> newKey += mainPlace.code);
+            
+            const selectedTransTypes = [...getSelected(VarNames.TRANSACTION_TYPES)];
+            updateVar(VarNames.TRANSACTION_TYPES, selectedTransTypes);
+            selectedTransTypes.forEach(transType=> newKey += transType);
+
+            const selectedPropTypes = [...getSelected(VarNames.PROPERTY_TYPES)]; 
+            updateVar(VarNames.PROPERTY_TYPES, selectedPropTypes);
+            selectedPropTypes.forEach(propType=> newKey += propType);
     
-            let selectedNumBedrooms = null;
-            selectedNumBedrooms = getSelected(NUMBER_OF_BEDROOMS);
-            updateVar(NUMBER_OF_BEDROOMS, selectedNumBedrooms);
+            const selectedNumBedrooms = [...getSelected(VarNames.NUMBER_OF_BEDROOMS)];
+            updateVar(VarNames.NUMBER_OF_BEDROOMS, selectedNumBedrooms);
+            selectedNumBedrooms.forEach(numBedrooms=> newKey += numBedrooms);
     
-            let selectedPriceRange = getSelected(PRICE_RANGES)[0];
+            let selectedPriceRange = getSelected(VarNames.PRICE_RANGES)[0];
             selectedPriceRange = selectedPriceRange.priceRange.replace(/R/gi, '');
             selectedPriceRange = selectedPriceRange.replace(/,/gi, '');
             selectedPriceRange = selectedPriceRange.replace(/\s/gi, '');
@@ -352,27 +382,38 @@ function SearchListings() {
 
             let priceFrom = selectedPriceRange[0];
             priceFrom = Number.parseFloat(priceFrom);
+            newKey += priceFrom;
 
             let priceTo = selectedPriceRange.length > 1? selectedPriceRange[1] : null;
-            if (priceTo) // not null
+            if (priceTo) { // not null
                 priceTo = Number.parseFloat(priceTo);
+                newKey += priceTo;
+            }
+            if (!varExists(VarNames.PRICE_FROM))
+                addVar(VarNames.PRICE_FROM, priceFrom);
+            else
+                updateVar(VarNames.PRICE_FROM, priceFrom);
+            if (!varExists(VarNames.PRICE_TO))
+                addVar(VarNames.PRICE_TO, priceTo);
+            else
+                updateVar(VarNames.PRICE_TO, priceTo);
 
-            updateVar(PRICE_FROM, priceFrom);
-            updateVar(PRICE_TO, priceTo);
-            let path = null;
-            if (location.pathname === '/search/all')
-                path = '/search/all/listings';
-            else if (location.pathname === '/search/offers') 
-                path = '/search/offers/listings';            
+            updateVar(VarNames.OFFERS_ONLY, offersOnly);
+            newKey += offersOnly;
 
-            navigate(path);
+            if (!varExists(VarNames.LISTINGS_KEY))
+                addVar(VarNames.LISTINGS_KEY, newKey);
+            else
+                updateVar(VarNames.LISTINGS_KEY, newKey);
+
+            setExpanded(false);
+            notify();
         } catch (error) {
             console.log(error);
-            toast.error(error, toastifyTheme);            
+            toast.error(error, toastifyTheme);
         } finally {
             setQueryComplete(true);
-        }
-
+        } // finally {
     } // async function submitData(e) {
 
     useEffect(() => {
@@ -386,7 +427,7 @@ function SearchListings() {
                 /* Verify if the collections (used for dropdown data) exist. If not, create them. 
                    Existence of Provinces collection implies that all the other collections exists too, as 
                    they are all created at once. */
-                if (!collectionExists(PROVINCES)) {
+                if (!collectionExists(VarNames.PROVINCES)) {
                     setProvincesLoaded(false);
                     let provinces = [];
                     provinces = await getAllProvinces();
@@ -394,17 +435,17 @@ function SearchListings() {
                     /* NB. When setting the number of selections that the user can make (on the multi-selection dropdowns),
                     we had to make sure they are such that they do not exceed the number of disjunction normalisations in
                     the query created by Firestore does not exceed maximum 30. */
-                    addCollection(PROVINCES, provinces, 2, false, 'name asc');
-                    addCollection(MUNICIPALITIES, [], 3, false, 'provinceName asc', 'name asc');
-                    addCollection(MAIN_PLACES, [], 3, false, 'provinceName asc', 'municipalityName asc', 'name asc');
+                    addCollection(VarNames.PROVINCES, provinces, 2, false, 'name asc');
+                    addCollection(VarNames.MUNICIPALITIES, [], 3, false, 'provinceName asc', 'name asc');
+                    addCollection(VarNames.MAIN_PLACES, [], 3, false, 'provinceName asc', 'municipalityName asc', 'name asc');
                     setTransactionTypesLoaded(false);
-                    addCollection(TRANSACTION_TYPES, transactionTypes, 1, true, 'asc'); // By true, we tell the collectionsContext to add a Primitive data type collection.
+                    addCollection(VarNames.TRANSACTION_TYPES, transactionTypes, 1, true, 'asc'); // By true, we tell the collectionsContext to add a Primitive data type collection.
                     setPropertyTypesLoaded(false);
-                    addCollection(PROPERTY_TYPES, propertyTypes, 2, true, 'asc');
+                    addCollection(VarNames.PROPERTY_TYPES, propertyTypes, 2, true, 'asc');
                     setNumberOfBedroomsLoaded(false);
-                    addCollection(NUMBER_OF_BEDROOMS, numberOfBedrooms, 3, true, 'asc');
-                    addCollection(PRICE_RANGES, [], 1, false, 'index asc');
-                } // if (!collectionExists(PROVINCES)) {
+                    addCollection(VarNames.NUMBER_OF_BEDROOMS, numberOfBedrooms, 3, true, 'asc');
+                    addCollection(VarNames.PRICE_RANGES, [], 1, false, 'index asc');
+                } // if (!collectionExists(VarNames.PROVINCES)) {
             } catch (error) {
                 toast.error(error, toastifyTheme);
             } finally {
@@ -415,16 +456,16 @@ function SearchListings() {
             } // finally
             
             try {
-                if (!varExists(PROVINCES)) {
-                    addVar(PROVINCES, null); // The selected provinces. Null for now.
-                    addVar(MUNICIPALITIES, null); // The selected municipalities. Null for now.
-                    addVar(MAIN_PLACES, null); // The selected main places to be used in the search. Null for now.
-                    addVar(TRANSACTION_TYPES, null); // The selected transaction type. Null for now.
-                    addVar(PROPERTY_TYPES, null); // The selected property types.
-                    addVar(NUMBER_OF_BEDROOMS, null); // The selected number of bedrooms options.
-                    addVar(PRICE_FROM, null);
-                    addVar(PRICE_TO, null);
-                    addVar(GET_LISTINGS_QUERY_OBJECT, getListingsQueryObject); // This will provide the function to use for querying listings.
+                if (!varExists(VarNames.PROVINCES)) {
+                    addVar(VarNames.PROVINCES, []); // The selected provinces. Empty for now.
+                    addVar(VarNames.MUNICIPALITIES, []); // The selected municipalities. Empty for now.
+                    addVar(VarNames.MAIN_PLACES, []); // The selected main places to be used in the search. Empty for now.
+                    addVar(VarNames.TRANSACTION_TYPES, []); // The selected transaction type. Empty for now.
+                    addVar(VarNames.PROPERTY_TYPES, []); // The selected property types.
+                    addVar(VarNames.NUMBER_OF_BEDROOMS, []); // The selected number of bedrooms options.
+                    addVar(VarNames.PRICE_FROM, null);
+                    addVar(VarNames.PRICE_TO, null);
+                    addVar(VarNames.OFFERS_ONLY, false);
                 }
                 else { 
                     /*  varExists(varName) == true 
@@ -432,39 +473,38 @@ function SearchListings() {
                         Check if the user had performed a search before, that is, selections were made in the dropdowns
                         and the Search button clicked, leading to the Listings page.
                     */
-                    const selectedProvinces = getVar(PROVINCES);
-                    if (selectedProvinces !== null) {  // True when user returns to this page from the listings page.
-                        setSelected(PROVINCES, selectedProvinces);
+                    const selectedProvinces = [...getVar(VarNames.PROVINCES)];
+                    if (selectedProvinces.length !== null) {  // True when user returns to this page from the listings page.
+                        setSelected(VarNames.PROVINCES, selectedProvinces);
                         await provincesSelected(); // This will effectively retrieve and set the municipalities of the currently selected provinces.
 
-                        const selectedMunicipalities = getVar(MUNICIPALITIES);
+                        const selectedMunicipalities = [...getVar(VarNames.MUNICIPALITIES)];
                         if (selectedMunicipalities !== null) {  // True when user returns to this page from the listings page.
-                            setSelected(MUNICIPALITIES, selectedMunicipalities);
+                            setSelected(VarNames.MUNICIPALITIES, selectedMunicipalities);
                             await municipalitiesSelected(); // This will effectively retrieve and set the main places of the currently selected municipalities.
                         }
 
-                        const selectedMainPlaces = getVar(MAIN_PLACES);
+                        const selectedMainPlaces = [...getVar(VarNames.MAIN_PLACES)];
                         if (selectedMainPlaces !== null)
-                            setSelected(MAIN_PLACES, selectedMainPlaces);                                                 
+                            setSelected(VarNames.MAIN_PLACES, selectedMainPlaces);
                     } // if (selectedProvinces !== null) {
                     
-                    const selectedTransactionTypes = getVar(TRANSACTION_TYPES);
+                    const selectedTransactionTypes = [...getVar(VarNames.TRANSACTION_TYPES)];
                     if (selectedTransactionTypes !== null) { // True when user returns to this page from the listings page.
-                        setSelected(TRANSACTION_TYPES, selectedTransactionTypes);
+                        setSelected(VarNames.TRANSACTION_TYPES, selectedTransactionTypes);
                         transactionTypeSelected(); // Set the priceRanges (sales or rental) collection in accordance with the selected transaction type (sale or rental).
                     }
                     
-                    const selectedPropertyTypes =  getVar(PROPERTY_TYPES);
+                    const selectedPropertyTypes =  [...getVar(VarNames.PROPERTY_TYPES)];
                     if (selectedPropertyTypes !== null) // True when user returns to this page from the listings page.
-                        setSelected(PROPERTY_TYPES, selectedPropertyTypes);
-    
-                    const selectedNumBedrooms = getVar(NUMBER_OF_BEDROOMS);
+                        setSelected(VarNames.PROPERTY_TYPES, selectedPropertyTypes);
+                    const selectedNumBedrooms = [...getVar(VarNames.NUMBER_OF_BEDROOMS)];
                     if (selectedNumBedrooms !== null) // True when user returns to this page from the listings page.
-                        setSelected(NUMBER_OF_BEDROOMS, selectedNumBedrooms);
+                        setSelected(VarNames.NUMBER_OF_BEDROOMS, selectedNumBedrooms);
     
-                    const aPriceFrom = getVar(PRICE_FROM);
-                    const aPriceTo = getVar(PRICE_TO);
-                    const priceRanges = getCollectionData(PRICE_RANGES);
+                    const aPriceFrom = getVar(VarNames.PRICE_FROM);
+                    const aPriceTo = getVar(VarNames.PRICE_TO);
+                    const priceRanges = getCollectionData(VarNames.PRICE_RANGES);
                     let selectedPriceRange;
                     if (aPriceFrom !== null && aPriceTo !== null)
                         selectedPriceRange = priceRanges.filter(range=> {
@@ -476,7 +516,7 @@ function SearchListings() {
                                                     return range.priceRange.includes(toZarCurrencyFormat(aPriceFrom) + ' +');
                                                 });
 
-                    setSelected(PRICE_RANGES, selectedPriceRange);
+                    setSelected(VarNames.PRICE_RANGES, selectedPriceRange);
                 } // else             
             } catch (error) {
                 toast.error(error, toastifyTheme);
@@ -500,83 +540,102 @@ function SearchListings() {
     }
 
     return (
-        <div className='w3-container'>
-            <form onSubmit={submitData}>
-                {provincesLoaded?
-                    <div className='w3-margin-top'>
-                        <MultiSelectionDropdown2 key={provincesKey} label='* Provinces' collectionName={PROVINCES} keyName='name' valueName='code'
-                                                  onItemsSelected={provincesSelected} />
-                        {showErrorIcon(PROVINCES)}
-                    </div>
-                    :
-                    <Loader message='Loading provinces ...' />
-                }
-
-                {municipalitiesLoaded?
-                    <div className='w3-margin-top'>
-                        <MultiSelectionDropdown2 key={municipalitiesKey} label='* Municipalities' collectionName={MUNICIPALITIES} keyName='name' valueName='code'
-                            onItemsSelected={municipalitiesSelected}/>
-                        {showErrorIcon(MUNICIPALITIES)}
-                    </div> 
-                    :
-                    <Loader message='Loading municipalities ...' />
-                }
-
-                {mainPlacesLoaded?
-                    <div className='w3-margin-top'>
-                        <MultiSelectionDropdown2 key={mainPlacesKey} label='* Main Places' collectionName={MAIN_PLACES} keyName='name' valueName='code' />
-                        {showErrorIcon(MAIN_PLACES)}
-                    </div>
-                    :
-                    <Loader message='Loading main places ...' />
-                }
-
-                {transactionTypesLoaded?
-                    <div className='w3-margin-top'>
-                        <Dropdown key={transactionTypesKey} label='* Transaction Types' collectionName={TRANSACTION_TYPES}
-                                    onItemSelected={transactionTypeSelected} />
-                        {showErrorIcon(TRANSACTION_TYPES)}
-                    </div>
-                    :
-                    <Loader message='Loading transaction types ...' />
-                }
-
-                {propertyTypesLoaded?
-                    <div className='w3-margin-top'>
-                        <MultiSelectionDropdown key={propertyTypesKey} label='* Property Types' collectionName={PROPERTY_TYPES} />
-                        {showErrorIcon(PROPERTY_TYPES)}
-                    </div>
-                    :
-                    <Loader message='Loading property types ...' />
-                }
-
-                {numberOfBedroomsLoaded?
-                    <div className='w3-margin-top'>
-                        <MultiSelectionDropdown key={numberOfBedroomsKey} label='* Number of Bedrooms' collectionName={NUMBER_OF_BEDROOMS} />
-                        {showErrorIcon(NUMBER_OF_BEDROOMS)}
-                    </div>
-                    :
-                    <Loader message='Loading property types ...' />
-                }
-                
-                {priceRangesLoaded?
-                    <div className='w3-margin-top'>
-                        <Dropdown2 key={priceRangesKey} label={`* Price${payRate}`} collectionName={PRICE_RANGES} keyName='priceRange' valueName='priceRange'/>
-                        {showErrorIcon(PRICE_RANGES)}
-                    </div>
-                    :
-                    <Loader message='Loading prices ...' />
-                }
-                
-                <div className='w3-padding'>
-                    <button className='w3-btn w3-margin-small w3-theme-d5 w3-round' type='submit'>Search</button>
+        <>
+            <div className='w3-container'>
+                <div className='w3-margin-top'>
+                    <button className='w3-btn w3-theme-d5 w3-round side-by-side' type='button' onClick={e=> handleFilterButtonClicked()}>
+                        Filters ({numFilters}) {!expanded? <RiArrowDropDownLine className='w3-large'/> : <RiArrowDropUpLine className='w3-large'/>}
+                    </button>
+                    <form className='side-by-side' onSubmit={submitData}>
+                        <div className='w3-padding side-by-side'>
+                            <button className='w3-btn w3-margin-small w3-theme-d5 w3-round' type='submit'>Search</button>
+                        </div>
+                    </form>
                 </div>
-                
-            </form>
+                {expanded &&
+                    <>
+                        {transactionTypesLoaded?
+                            <div className='w3-margin-top'>
+                                <Dropdown key={transactionTypesKey} label='* Transaction Types' collectionName={VarNames.TRANSACTION_TYPES}
+                                            onItemSelected={transactionTypeSelected} />
+                                {showErrorIcon(VarNames.TRANSACTION_TYPES)}
+                            </div>
+                            :
+                            <Loader message='Loading transaction types ...' />
+                        }
 
-            <ToastContainer/>
-        </div>
+                        <div className='w3-margin-top w3-padding-small'>
+                            <input type='checkbox' name='offersOnly' checked={offersOnly} onChange={e=> handleOffersOnlyChanged()}/>
+                            <label htmlFor='offersOnly'> Offers only</label>
+                        </div>
+
+                        {priceRangesLoaded?
+                            <div className='w3-margin-top'>
+                                <Dropdown2 key={priceRangesKey} label={`* Price${payRate}`} collectionName={VarNames.PRICE_RANGES} keyName='priceRange' valueName='priceRange'/>
+                                {showErrorIcon(VarNames.PRICE_RANGES)}
+                            </div>
+                            :
+                            <Loader message='Loading prices ...' />
+                        }
+                        
+                        {propertyTypesLoaded?
+                            <div className='w3-margin-top'>
+                                <MultiSelectionDropdown key={propertyTypesKey} label='Property Types' collectionName={VarNames.PROPERTY_TYPES} />
+                            </div>
+                            :
+                            <Loader message='Loading property types ...' />
+                        }
+
+                        {numberOfBedroomsLoaded?
+                            <div className='w3-margin-top'>
+                                <MultiSelectionDropdown key={numberOfBedroomsKey} label='Number of Bedrooms' collectionName={VarNames.NUMBER_OF_BEDROOMS} />
+                            </div>
+                            :
+                            <Loader message='Loading property types ...' />
+                        }
+
+                        {provincesLoaded?
+                            <div className='w3-margin-top'>
+                                <MultiSelectionDropdown2 key={provincesKey} label='* Provinces' collectionName={VarNames.PROVINCES} keyName='name' valueName='code'
+                                                        onItemsSelected={provincesSelected} />
+                                {showErrorIcon(VarNames.PROVINCES)}
+                            </div>
+                            :
+                            <Loader message='Loading provinces ...' />
+                        }
+
+                        {municipalitiesLoaded?
+                            <div className='w3-margin-top'>
+                                <MultiSelectionDropdown2 key={municipalitiesKey} label='Municipalities' collectionName={VarNames.MUNICIPALITIES} keyName='name' valueName='code'
+                                    onItemsSelected={municipalitiesSelected}/>
+                                {showErrorIcon(VarNames.MUNICIPALITIES)}
+                            </div> 
+                            :
+                            <Loader message='Loading municipalities ...' />
+                        }
+                        
+                        {mainPlacesLoaded?
+                            <div className='w3-margin-top'>
+                                <MultiSelectionDropdown2 key={mainPlacesKey} label='Main Places' collectionName={VarNames.MAIN_PLACES} keyName='name' valueName='code' />
+                            </div>
+                            :
+                            <Loader message='Loading main places ...' />
+                        }
+                    
+                        <div className='w3-padding side-by-side'>
+                            <button className='w3-btn w3-margin-small w3-theme-d5 w3-round' type='button' onClick={e=> handleFilterButtonClicked()}>Filters <RiArrowDropUpLine className='w3-large'/></button>
+                        </div>
+                    </>
+                }
+
+                <ToastContainer/>
+            </div>
+        </>
     );
 }
+
+SearchListings.propTypes = {
+    notify: PropTypes.func
+};
 
 export default SearchListings;

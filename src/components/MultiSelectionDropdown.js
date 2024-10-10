@@ -4,16 +4,19 @@
  * Description: 
  * Provide a multi-selection, searchable dropdown that takes an array of primitve types.
  * * --------------------------------------------------------------------------------
- * Date       Dev       Description
- * 2024/02/27 ITA       Genesis.
+ * Date        Dev    Version   Description
+ * 2024/02/27  ITA    1.00      Genesis.
+ * 2024/09/17  ITA    1.02      Toggle (add/remove) class name (w3-show) for displaying list items. Remove the style attribute.
+ *                              Adjust width and add borders.
+ *                              Import context directly. Variable names moved to VarNames object.
  */
 import PropTypes from 'prop-types';
-import { useState, useEffect, useContext, memo } from 'react';
+import { useState, useEffect, memo } from 'react';
 import { FaTimes } from 'react-icons/fa';
 import { RiArrowDropUpLine, RiArrowDropDownLine } from "react-icons/ri";
 import toastifyTheme from './toastifyTheme';
 import { toast } from 'react-toastify';
-import { collectionsContext } from '../hooks/CollectionsProvider';
+import { useCollectionsContext } from '../hooks/CollectionsProvider';
 
 function MultiSelectionDropdown({
                     label, // label with which to describe the dropdown.
@@ -23,10 +26,8 @@ function MultiSelectionDropdown({
                 }) // If provided, use this function for sorting. Otherwise sort by keyName field.
 {
 
-    const { getCollectionData, setSelected, getSelected, getMaxNumSelections } = useContext(collectionsContext);
-    const [w3ShowList, setW3ShowList] = useState(null); /* Styling to enable the list of items to show or disappear.
-                                                           Will alernate between 2 values as the Dropdown gains or losses focus
-                                                           And also when an item is selected. */
+    const { getCollectionData, setSelected, getSelected, getMaxNumSelections } = useCollectionsContext();
+    const [showItems, setShowItems] = useState(false); /* true or false: show or hide dropdown items */
     const [list, setList] = useState([]);
     const [selectedItems, setSelectedItems] = useState([]);
     const [searchText, setSearchText] = useState('');
@@ -113,43 +114,44 @@ function MultiSelectionDropdown({
     } // function removeItem(itemToRemove) {
 
     function toggleShowList() {
-        if (w3ShowList === null)
+        if (!showItems)
             showList();
         else
             hideList();
     } // function toggleShowList() {
 
     function hideList() {
-        setW3ShowList(null);
+        setShowItems(false);
 
-        try {            
+        try {
             setSelected(collectionName, selectedItems);
             setSelectedItems(selectedItems.sort());
             
             if (onItemsSelected !== null)
                 onItemsSelected(); 
         } catch (error) {
-            toast.error(error, toastifyTheme);            
+            toast.error(error, toastifyTheme);
         }
     } // function hideList() {
 
     function showList() {
-        setW3ShowList(prev=> ({display: 'block'}));
+        if (list.length > 0)
+            setShowItems(true);
     } // function showList() {
 
     return (
-        <div style={isDisabled? { pointerEvents: 'none'}: {}}>
+        <div className='w3-border w3-round w3-padding-small' style={isDisabled? { pointerEvents: 'none'}: {}}>
             <label htmlFor='searchDropDown w3-padding-small'>{label}</label>
             <div className='w3-padding-small'>
-                <div className='side-by-side'  style={{width: '80%'}}>
+                <div className='side-by-side'  style={{width: '90%'}}>
                     <input className={`w3-input-theme-1 w3-input`}
                             type='text' id='searchDropDown' name='searchDropDown' autoComplete='off'
-                            aria-label={`Type to Search for ${label}`} aria-required={true} onChange={e=> handleSearch(e)}
+                            aria-label={`Type to search for ${label}`} aria-required={true} onChange={e=> handleSearch(e)}
                             onFocus={e=> showList()} placeholder='Type to search' value={searchText} />
                 </div>
                 <div className='w3-xlarge side-by-side' onClick={e=> toggleShowList(e)}>
                     <b>
-                        {w3ShowList === null? <RiArrowDropDownLine/> : <RiArrowDropUpLine/>}
+                        {!showItems? <RiArrowDropDownLine/> : <RiArrowDropUpLine/>}
                     </b>
                 </div>
                 <div className='w3-margin-top' key={selectedItemsKey}>
@@ -165,8 +167,8 @@ function MultiSelectionDropdown({
             </div>
 
             <div className=' w3-padding-small'>
-                <div className='w3-input-theme-1 w3-dropdown-content w3-border w3-bar-block' id='dropDown' name='dropDown' aria-label={label} 
-                        key={listKey} style={w3ShowList}>
+                <div className={`w3-input-theme-1 w3-dropdown-content w3-border w3-bar-block ${showItems && 'w3-show'}`} id='dropDown' name='dropDown' aria-label={label} 
+                        key={listKey} >
                     {list.map((item, index)=> {
                                             return (
                                                 <div className='w3-bar-item w3-button' key={`${index}$`} aria-label={item} >
