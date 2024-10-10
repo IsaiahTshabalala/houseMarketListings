@@ -6,10 +6,10 @@
  * Date         Dev  Version  Description
  * 2024/05/23   ITA  1.00     Genesis.
  * 2024/07/09   ITA  1.01     REPORT THIS LISTING option to disappear if the listing has been reported.
- * 2024/09/18   ITA  1.01     Import context directly.
+ * 2024/09/18   ITA  1.01     Import context directly. Replace NavLinks with Links, since Links suffice for use as non-menu-item hyper-links.
  */
 import { useState, useEffect } from "react";
-import { NavLink, useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { FaFlag, FaCheck, FaTimes, FaTimesCircle } from 'react-icons/fa';
 import { MdOutlineReportProblem } from "react-icons/md";
 import { toast, ToastContainer } from 'react-toastify';
@@ -195,9 +195,9 @@ function ReportOrFlag() {
                         <>
                             {submitted?                                
                                 
-                                <NavLink className='w3-btn w3-round w3-theme-d5' onClick={e=> setModalOn(true)}>
+                                <Link className='w3-btn w3-round w3-theme-d5' onClick={e=> setModalOn(true)}>
                                     <span><MdOutlineReportProblem/></span> Report this listing
-                                </NavLink>
+                                </Link>
                                 :
                                 <Loader small={true} message='Submitting report. Please wait ...'/>
                             }

@@ -5,7 +5,7 @@
  * Date        Dev  Version  Description
  * 2024/04/05  ITA  1.00     Genesis.
  * 2024/09/18  ITA  1.01     Import context directly. Current User state moved to Global State.
- *                           Use Link instead of NavLink for non-menu-item links.
+ *                           Replace NavLinks with Links, since Links suffice for use as non-menu-item hyper-links.
  */
 import { useState } from 'react';
 import { Navigate, Link } from 'react-router-dom';

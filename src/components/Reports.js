@@ -6,6 +6,7 @@
  * 2024/05/09   ITA  1.00     Genesis
  * 2024/07/14   ITA  1.02     Maximum number of documents fetched from Firestore settable in the environment variables. Default: 10.
  * 2024/09/19   ITA  1.03     Context to be imported directly.
+ *                            Replace NavLinks with Links, since Links suffice for use as non-menu-item hyper-links.
  */
 import { getDocs, onSnapshot } from 'firebase/firestore';
 import { FetchTypes, getReportsToReviewQuery, VarNames, getDocumentSnapshot,

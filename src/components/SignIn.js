@@ -8,7 +8,7 @@
  *                            Change the links (NavLinks) to appear as buttons.
  * 2024/09/18  ITA   1.02     Export context in ready-made form, eliminated the need for calling useContext where it is used.
  */
-import { NavLink, useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useState, createContext, useContext, useEffect } from 'react';
 import SignInEmail from './SignInEmail';
 import { auth, isSignedIn } from '../config/appConfig';
@@ -61,7 +61,7 @@ function SignIn() {
                 <>
                     {displayedComponent === null &&
                         <p className='w3-margin'>           
-                            <NavLink className='w3-margin w3-btn w3-round w3-theme-d5 w3-padding w3-large' to='/'><FaHome/></NavLink>
+                            <Link className='w3-margin w3-btn w3-round w3-theme-d5 w3-padding w3-large' to='/'><FaHome/></Link>
                         </p>
                     }
                 </>

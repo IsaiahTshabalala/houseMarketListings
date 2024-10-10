@@ -17,7 +17,7 @@ import { auth } from '../config/appConfig.js';
 import { FaTimesCircle } from 'react-icons/fa';
 import { toast, ToastContainer } from 'react-toastify';
 import toastifyTheme from './toastifyTheme.js';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import PropTypes from 'prop-types';
 
 function SignInSMSVerification({multiFactorError}) {    
@@ -153,7 +153,7 @@ function SignInSMSVerification({multiFactorError}) {
                 <ToastContainer/>
                 <>
                     {phoneHintIndex >= 0 &&
-                        <NavLink className='w3-btn w3-round w3-theme-d5' onClick={prepareVerification}>Verify phone number</NavLink>
+                        <Link className='w3-btn w3-round w3-theme-d5' onClick={prepareVerification}>Verify phone number</Link>
                     }
                 </>
 
