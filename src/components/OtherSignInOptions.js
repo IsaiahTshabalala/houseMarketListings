@@ -6,6 +6,7 @@
  * 2024/10/10  ITA   1.02     Provide the pipe dilimited list of OAuth providers in the .env file.
  *                            This enables one to turn on/off OAuth providers as per what can be afforded.
  *                            Remove the dispatch actions, since they are automatically performed by the top-most, CurrentUserState component of this web application.
+ * 2024/10/11   ITA  1.03     A console log. It is to test why, in the Vercel hosted app, the sign in options (providers) are not displayed at all, while they have been listed in the .env file.
  */
 import { useState } from "react";
 import { signInWithPopup, GoogleAuthProvider, FacebookAuthProvider, OAuthProvider } from "firebase/auth";
@@ -30,7 +31,7 @@ function OtherSignInOptions() {
       // Pipe delimited list of OAuth Providers.
       let oAuthProviders = process.env.REACT_APP_OAUTH_PROVIDERS? process.env.REACT_APP_OAUTH_PROVIDERS.toLowerCase() : ''; // Get the pipe delimited list of oAuth providers.
       oAuthProviders = oAuthProviders.split('|');
-
+      console.log(oAuthProviders);
       return Object.freeze({
         oAuthProviders
       });
