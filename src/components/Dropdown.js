@@ -10,6 +10,7 @@
  * 2024/09/17  ITA   1.02      Toggle (add/remove) class name (w3-show) for displaying list items. Remove the style attribute.
  *                             Adjust width and add borders.
  *                             Import context directly.
+ * 2024/10/11  ITA   1.04      Reduce the width of the text box so that it appears side by side with the drop-down on even smaller screens.
  */
 import PropTypes from 'prop-types';
 import { useState, useEffect, memo } from 'react';
@@ -101,9 +102,9 @@ function Dropdown({label, // label with which to describe the dropdown.
 
     return (
         <div className='w3-border w3-round w3-padding-small' style={isDisabled? { pointerEvents: 'none'}: {}}>
-            <label htmlFor='searchDropDown w3-padding-small'>{label}</label>
             <div className='w3-padding-small'>
-                <div className='side-by-side' style={{width: '90%'}}>
+                <div className='side-by-side' style={{width: '80%'}}>
+                    <label htmlFor='searchDropDown w3-padding-small'>{label}</label>
                     <input className={`w3-input-theme-1 w3-input`} autoComplete='off'
                             type='text' id='searchDropDown' name='searchDropDown'
                             aria-label={`Type to Search for ${label}`} aria-required={true} onChange={e=> handleSearch(e)}
