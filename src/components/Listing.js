@@ -13,6 +13,7 @@
  * 2024/08/19   ITA   1.06     Remove seller information from view of other users. Alternative method to contact seller to be used in the future.
  * 2024/10/03   ITA   1.07     Import context directly. Variable names moved to VarNames object. User state moved to Global State.
  *                             Link suffices for non-menu-item links.
+ * 2024/10/29   ITA   1.08     Provide the option to report/flag a listing only to users who do not own it.
  */
 import { useParams, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
@@ -146,7 +147,9 @@ function Listing() {
                     
                     <p/>
                     
-                    <ReportOrFlag/>
+                    {(currentUser?.uid !== listing.userId) &&
+                        <ReportOrFlag/>
+                    }
                     
                     {(location.pathname === `/my-profile/listings/${params.listingId}`) &&
                         <h4>
