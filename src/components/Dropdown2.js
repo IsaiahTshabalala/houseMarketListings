@@ -12,7 +12,8 @@
  * 2024/09/17  ITA    1.03    Toggle (add/remove) class name (w3-show) for displaying list items. Remove the extra style attribute.
                               Adjust width and add borders.
                               Import context directly.
-* 2024/10/11  ITA   1.04      Reduce the width of the text box so that it appears side by side with the drop-down on even smaller screens.
+* 2024/10/11   ITA   1.04     Reduce the width of the text box so that it appears side by side with the drop-down on even smaller screens.
+* 2024/10/28   ITA   1.05     Improve the responsiveness of the dropdown.
  */
 import PropTypes from 'prop-types';
 import { useEffect, useState, memo } from 'react';
@@ -20,6 +21,7 @@ import { RiArrowDropUpLine, RiArrowDropDownLine } from "react-icons/ri";
 import { useCollectionsContext } from '../hooks/CollectionsProvider';
 import { toast } from 'react-toastify';
 import toastifyTheme from './toastifyTheme';
+import '../dropdown.css';
 
 function Dropdown2({label, // label with which to describe the dropdown.
                     collectionName,  // Name of the collection from which to display items.
@@ -97,25 +99,25 @@ function Dropdown2({label, // label with which to describe the dropdown.
     }, []); // useEffect(()=> {
 
     return (
-        <div className='w3-border w3-round w3-padding-small' style={isDisabled? { pointerEvents: 'none'}: {}}>
+        <div className='w3-border w3-round w3-padding-small dropdown' style={isDisabled? { pointerEvents: 'none'}: {}}>
             <div className='w3-padding-small'>
-                <div className='side-by-side'  style={{width: '80%'}}>
-                    <label htmlFor='searchDropDown w3-padding-small'>{label}</label>
-                    <input className={`w3-input-theme-1 w3-input`}
+                <label htmlFor='searchDropDown'>{label}</label>
+                <div  className='input-wrapper'>
+                    <input className={`w3-input-theme-1 w3-input dropdown-input`}
                             type='text' id='searchDropDown' name='searchDropDown' autoComplete='off'
                             aria-label={`Type to Search for ${label}`} aria-required={true} onChange={e=> handleSearch(e)}
                             disabled={isDisabled}
                             onFocus={e=> showList()}
                             placeholder='Type to search' value={searchText} />
-                </div>
-                <div className='w3-xlarge side-by-side' onClick={e=> toggleShowList(e)}>
-                    <b>
-                        {!showItems? <RiArrowDropDownLine/> : <RiArrowDropUpLine/>}
-                    </b>
+                    <div className='w3-xlarge' onClick={e=> toggleShowList(e)}>
+                        <b>
+                            {!showItems? <RiArrowDropDownLine/> : <RiArrowDropUpLine/>}
+                        </b>
+                    </div>
                 </div>
             </div>
 
-            <div className=' w3-padding-small'>
+            <div className='w3-padding-small'>
                 <div className={`w3-input-theme-1 w3-dropdown-content w3-bar-block w3-border ${showItems && 'w3-show'}`} id='dropDown' name='dropDown' aria-label={label} >
                     {list.map((item)=> {
                                             return (

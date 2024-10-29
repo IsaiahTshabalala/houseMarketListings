@@ -5,11 +5,12 @@
  * Provide a multi-selection, searchable dropdown that takes an array of objects.
  * A developer must specify which field name to use for displaying (the keyName), and which field name  (valueName) to use as value selected.
  * * --------------------------------------------------------------------------------
- * Date       Dev       Description
- * 2024/02/07 ITA       Genesis.
- * 2024/09/18 ITA       Toggle (add/remove) class name (w3-show) for displaying list items. Remove the style attribute.
- *                      Adjust width and add borders.
- *                      Import context directly. Variable names moved to VarNames object.
+ * Date       Dev    Version Description
+ * 2024/02/07 ITA    1.00    Genesis.
+ * 2024/09/18 ITA    1.01    Toggle (add/remove) class name (w3-show) for displaying list items. Remove the style attribute.
+ *                           Adjust width and add borders.
+ *                           Import context directly. Variable names moved to VarNames object.
+ * 2024/10/28 ITA    1.02    Improve the responsiveness of the dropdown.
  */
 import PropTypes from 'prop-types';
 import { useState, useEffect, memo } from 'react';
@@ -18,6 +19,7 @@ import { RiArrowDropUpLine, RiArrowDropDownLine } from "react-icons/ri";
 import toastifyTheme from './toastifyTheme';
 import { toast } from 'react-toastify';
 import { useCollectionsContext } from '../hooks/CollectionsProvider';
+import '../dropdown.css';
 
 function MultiSelectionDropdown2({
                     label, // label with which to describe the dropdown.
@@ -149,19 +151,19 @@ function MultiSelectionDropdown2({
     } // function showList() {
 
     return (
-        <div className='w3-border w3-round w3-padding-small w3-margin-small' style={isDisabled? { pointerEvents: 'none'}: {}}>
-            <label htmlFor='searchDropDown w3-padding-small'>{label}</label>
+        <div className='w3-border w3-round w3-padding-small w3-margin-small dropdown' style={isDisabled? { pointerEvents: 'none'}: {}}>
             <div className='w3-padding-small'>
-                <div className='side-by-side' style={{width: '90%'}}>
-                    <input className={`w3-input-theme-1 w3-input`}
+                <label htmlFor='searchDropDown'>{label}</label>
+                <div className='input-wrapper'>
+                    <input className={`w3-input-theme-1 w3-input dropdown-input`}
                             type='text' id='searchDropDown' name='searchDropDown' autoComplete='off'
                             aria-label={`Type to Search for ${label}`} aria-required={true} onChange={e=> handleSearch(e)}
                             onFocus={e=> showList()} placeholder='Type to search' value={searchText} />
-                </div>
-                <div className='w3-xlarge side-by-side' onClick={e=> toggleShowList(e)}>
-                    <b>
-                        {!showItems? <RiArrowDropDownLine/> : <RiArrowDropUpLine/>}
-                    </b>
+                    <div className='w3-xlarge' onClick={e=> toggleShowList(e)}>
+                        <b>
+                            {!showItems? <RiArrowDropDownLine/> : <RiArrowDropUpLine/>}
+                        </b>
+                    </div>
                 </div>
                 <div className='w3-margin-top' key={selectedItemsKey}>
                     {selectedItems.map(item=> {                            

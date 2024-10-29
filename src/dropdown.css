@@ -1,0 +1,36 @@
+/*File namme: ./src/dropdown.css
+* Description: part of the css used for styling the dropdowns,
+                including dealing with responsiveness.
+* Date        Dev  Version  Description
+* 2024/10/28  ITA  1.00     Genesis.
+*/
+
+/* Styling for the dropdown */
+.dropdown {
+    position: relative;
+    display: inline-block;
+  }
+  
+  /* Wrapper for input and icon */
+  .input-wrapper {
+    display: flex; /* Use flexbox to align input and icon */
+    align-items: center;
+    width: 100%;
+  }
+  
+  .dropdown-input {
+    flex: 1; /* Input takes up remaining space */
+    padding: 10px;
+    border: none;
+    outline: none;
+    width: 100%;
+  }
+    
+  /* Responsive adjustments */
+  @media (max-width: 600px) {
+    .dropdown-input {
+      font-size: 14px;
+      padding: 8px;
+    }
+  }
+  

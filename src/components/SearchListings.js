@@ -16,6 +16,7 @@
  * 2024/08/18   ITA  1.06     Import context directly. Variable names moved to VarNames object.
  *              ITA  1.07     Property types, number of bedrooms, municipalities and main places are now optional filters.
  *                            Component to call (notify) a parent component provided function after search data has been submitted.
+ * 2024/10/28   ITA  1.08     Remove the divs around the Filters and Search buttons. Not necessary.   
  */
 import { useEffect, useState, useRef } from 'react';
 import { RiArrowDropUpLine, RiArrowDropDownLine } from "react-icons/ri";
@@ -543,13 +544,11 @@ function SearchListings({
         <>
             <div className='w3-container'>
                 <div className='w3-margin-top'>
-                    <button className='w3-btn w3-theme-d5 w3-round side-by-side' type='button' onClick={e=> handleFilterButtonClicked()}>
+                    <button className='w3-btn w3-theme-d5 w3-round side-by-side w3-margin-right' type='button' onClick={e=> handleFilterButtonClicked()}>
                         Filters ({numFilters}) {!expanded? <RiArrowDropDownLine className='w3-large'/> : <RiArrowDropUpLine className='w3-large'/>}
                     </button>
-                    <form className='side-by-side' onSubmit={submitData}>
-                        <div className='w3-padding side-by-side'>
-                            <button className='w3-btn w3-margin-small w3-theme-d5 w3-round' type='submit'>Search</button>
-                        </div>
+                    <form className='side-by-side w3-margin-top' onSubmit={submitData}>
+                        <button className='w3-btn w3-margin-small w3-theme-d5 w3-round' type='submit'>Search</button>
                     </form>
                 </div>
                 {expanded &&
@@ -622,9 +621,7 @@ function SearchListings({
                             <Loader message='Loading main places ...' />
                         }
                     
-                        <div className='w3-padding side-by-side'>
-                            <button className='w3-btn w3-margin-small w3-theme-d5 w3-round' type='button' onClick={e=> handleFilterButtonClicked()}>Filters <RiArrowDropUpLine className='w3-large'/></button>
-                        </div>
+                        <button className='side-by-side w3-btn w3-margin-top w3-margin-small w3-theme-d5 w3-round' type='button' onClick={e=> handleFilterButtonClicked()}>Filters <RiArrowDropUpLine className='w3-large'/></button>
                     </>
                 }
 
