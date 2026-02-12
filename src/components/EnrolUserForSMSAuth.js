@@ -1,9 +1,10 @@
 /**
  * File: ./src/components/EnroUserForSMSAuth.js
  * Description: Enrol user for SMS authentication.
- * Date        Dev   Version Description
- * 2023/06/04  ITA   1.00    Genesis.
- * 2024/04/02  ITA   1.00    Add header comment. Improve the appearance of the Enrol for SMS Authentication link.
+ * Start Date  End Date    Dev   Version Description
+ * 2023/06/04              ITA   1.00    Genesis.
+ * 2024/04/02              ITA   1.00    Add header comment. Improve the appearance of the Enrol for SMS Authentication link.
+ * 2025/12/27  2025/12/27  ITA   1.02    isValidDisplayName() and isValidPhoneNo() replaced with imports isValidName() and isValidPhoneNum from 'some-common-functions-js' package.
  */
 import { multiFactor, PhoneAuthProvider, PhoneMultiFactorGenerator,
          RecaptchaVerifier } from 'firebase/auth';
@@ -12,7 +13,7 @@ import { auth } from '../config/appConfig.js';
 import { FaTimesCircle } from 'react-icons/fa';
 import {toast, ToastContainer } from 'react-toastify';
 import toastifyTheme from './toastifyTheme.js';
-import { isValidDisplayName, isValidPhoneNo } from '../utilityFunctions/commonFunctions.js';
+import { isValidName, isValidPhoneNum } from "some-common-functions-js"
 import { NavLink } from 'react-router-dom';
 import Loader from './Loader.js';
 
@@ -112,7 +113,7 @@ function EnrolUserForSMSAuth({phoneNumber, displayName}) {
 
     return (
         <>
-            {isValidPhoneNo(phoneNumber) && isValidDisplayName(displayName) && (!phoneVerified) &&
+            {isValidPhoneNum(phoneNumber) && isValidName(displayName) && (!phoneVerified) &&
             <div className='w3-container'>             
                 <div className='w3-padding' id='recaptcha-container'></div>
                 

@@ -1,9 +1,12 @@
 /**
  * File: ./src/components/Register.js
  * Description: Email sign up page. For users who opt to sign up using email addresses other than Gmail, Facebook and Yahoo.
- * Date         Dev   Version Description
- * 2023/07/27   ITA   1.00    Genesis.
- * 2024/06/18   ITA   1.01    Add the header comment. Improve the appearance of the home and login links to look like buttons.
+ * Start Date   End Date    Dev   Version Description
+ * 2023/07/27               ITA   1.00    Genesis.
+ * 2024/06/18               ITA   1.01    Add the header comment. Improve the appearance of the home and login links to look like buttons.
+ * 2026/01/06   2026/01/06  ITA   1.02    Replaced loDash.get() with an alternatives from 'some-common-functions-js'.
+ *                                        isValidPassword() now imported from 'some-common-functions-js'.
+ * 
  */
 import { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
@@ -14,12 +17,11 @@ import 'react-toastify/dist/ReactToastify.css';
 import { BiErrorCircle } from 'react-icons/bi';
 import { BsCheck } from 'react-icons/bs';
 import { useEffect } from 'react';
-import { isValidPassword, hasValues } from '../utilityFunctions/commonFunctions';
+import { hasValues } from '../utilityFunctions/commonFunctions';
+import { isValidPassword, get } from 'some-common-functions-js';
 import toastifyTheme from './toastifyTheme';
 import '../w3.css';
 import { FaHome } from 'react-icons/fa';
-
-const lodash = require('lodash');
 
 const init = {
   email: '',
@@ -41,7 +43,7 @@ function Register() {
   function showErrorIcon(fieldPath) {
     return (
       <>
-        {lodash.get(errors, fieldPath) !== undefined?
+        {get(errors, fieldPath) !== undefined?
           <div className='w3-small w3-text-black'><BiErrorCircle/>{errors[fieldPath]}</div>
           :
           <div className='w3-small w3-text-black' style={{opacity: '0'}}>

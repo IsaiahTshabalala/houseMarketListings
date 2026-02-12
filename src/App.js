@@ -1,17 +1,18 @@
 /**
  * File: ./src/app.js
  * Description: The root of the application.
- * Date         Dev   Version   Description
- * 2023/07/26   ITA   1.00      Genesis
- * 2024/01/17   ITA   1.01      Add more routes. To accomodate more features.
- * 2024/07/03   ITA   1.02      Add versions to the patch descriptions.
- *                              Add the Title component (Discounted Listings) on top of the Listings component for the route /search/offers/listings/.
- *                              Update route /search to /search/all, so that /search menu items are correctly highlightable, per selected item or current url.
- *                              User to be navigated to the home page if unavailable url path entered.
- * 2024/09/17   ITA   1.03      Remove the CollectionProvider context around the Listing and Listings components. No longer needed. Current User state moved to Global State.
- *                              as more state, the locations (url) history is also moved there.
- *                              Routes defined separately, making code more readable and maintainable.
- *                              Removed search menu items and routes. Search functionality has been moved to the home page (/).
+ * Start Date  End Date    Dev   Version   Description
+ * 2023/07/26              ITA   1.00      Genesis
+ * 2024/01/17              ITA   1.01      Add more routes. To accomodate more features.
+ * 2024/07/03              ITA   1.02      Add versions to the patch descriptions.
+ *                                         Add the Title component (Discounted Listings) on top of the Listings component for the route /search/offers/listings/.
+ *                                         Update route /search to /search/all, so that /search menu items are correctly highlightable, per selected item or current url.
+ *                                         User to be navigated to the home page if unavailable url path entered.
+ * 2024/09/17              ITA   1.03      Remove the CollectionProvider context around the Listing and Listings components. No longer needed. Current User state moved to Global State.
+ *                                         as more state, the locations (url) history is also moved there.
+ *                                         Routes defined separately, making code more readable and maintainable.
+ *                                         Removed search menu items and routes. Search functionality has been moved to the home page (/).
+ * 2024/01/16  2026/01/16  ITA   1.04      Collections context and provider removed, in keeping up with the dropdowns-js update.
  */
 import MenuBar from './components/MenuBar';
 import SignIn from './components/SignIn';
@@ -32,7 +33,6 @@ import GlobalStateProvider from './hooks/GlobalStateProvider';
 import MyListings from './components/MyListings';
 import Listing from './components/Listing';
 import CurrentUserState from './components/CurrentUserState';
-import CollectionsProvider from './hooks/CollectionsProvider';
 import SharedVarsProvider from './hooks/SharedVarsProvider';
 import AddOrEditListing from './components/AddOrEditListing';
 import Moderator from './components/Moderator';
@@ -65,10 +65,7 @@ const routes = [
         children: [
             {
                 path: '/',
-                element: 
-                         <CollectionsProvider>
-                            <Explore/>
-                         </CollectionsProvider>
+                element: <Explore/>
             },
             {
                 path: ':listingId',
@@ -76,10 +73,7 @@ const routes = [
             },
             {
                 path: ':listingId/edit',
-                element: 
-                         <CollectionsProvider>
-                            <AddOrEditListing/>
-                         </CollectionsProvider>
+                element: <AddOrEditListing/>
             }
         ]
     },
@@ -131,18 +125,13 @@ const routes = [
         children: [
             {
                 path: 'account',
-                element: /**The AccountInfo component shares the collections (provinces, municipalities, main places, sub-places)
-                            with its dropdowns. Hence the CollectionProvider hook. */
-                        <CollectionsProvider>
-                            <AccountInfo/>
-                        </CollectionsProvider>
+                element: <AccountInfo/>
             },
             {
                 path: 'listings',
                 element:
                         /**MyListings and Listing components share the clickedListing shared variable.
                          * Hence the SharedVarsProvider useContext hook.
-                         * The 
                         */
                         <SharedVarsProvider>
                             <Outlet/>
@@ -155,25 +144,15 @@ const routes = [
                     {
                         path: '/my-profile/listings/:listingId',
                         element: 
-                                <CollectionsProvider>
-                                    <Listing/>
-                                </CollectionsProvider>
+                                <Listing/>
                     },
                     {
                         path: '/my-profile/listings/:listingId/edit',
-                        element: /**The AddOrEditListing component shares collections (provinces, municipalities, main places, sub-place)
-                                    with its dropdowns. Hence the CollectionsProvider useContext hook. */
-                                <CollectionsProvider>
-                                    <AddOrEditListing/>
-                                </CollectionsProvider>
+                        element: <AddOrEditListing/>
                     },
                     {
                         path: '/my-profile/listings/new',
-                        element: /**AddOrEditListing component shares collections (provinces, municipalities, main places, sub-places)
-                                        with its dropdowns. */
-                                <CollectionsProvider>
-                                    <AddOrEditListing/>
-                                </CollectionsProvider>
+                        element: <AddOrEditListing/>
                     }
                 ]
             },
@@ -189,11 +168,9 @@ const routes = [
                 <>
                     <LocationsRecorder/>
                     <MenuBar/>
-                    <CollectionsProvider>
-                        <SharedVarsProvider>
-                            <Moderator/>                                                   
-                        </SharedVarsProvider>
-                    </CollectionsProvider>
+                    <SharedVarsProvider>
+                        <Moderator/>                                                   
+                    </SharedVarsProvider>
                 </>,
         children: [
             {

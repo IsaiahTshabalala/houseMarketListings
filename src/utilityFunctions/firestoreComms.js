@@ -1,29 +1,32 @@
 /**File: firestoreComms.js
  * Description: Functions that help with querying Firestore data.
  * 
- * Date         Dev  Version  Description
- * 2024/01/21   ITA  1.00     Genesis.
- * 2024/05/16   ITA  1.01     Add more variables.
- * 2024/06/22   ITA  1.02     Move function descriptions to the top, outside of each respective function, so as to be displayed on the documentation tips.
- *                            Rename QueryTypes to FetchTypes.
- *                            Improve the getListingsQueryObject, getListingsByUserIdQueryObject and getListingsPerMainPlaceQueryObject
- *                            to create a query fetching data after a specified document, or up to a specified document.
- * 2024/07/14   ITA   1.03    getListingsByUserIdQueryObject: fix a bug. When the FetchType is END_AT_DOC, the query must use endAt, not startAfter.
- *                            Add priceRanges and PRICE_RANGES, to be usable with dropdowns, to enable users to select the price range of properties sought.
- * 2024/08/08   ITA   1.01    Move the function transformListingData to this file, so as to have one centralised instance, instead of same function existing across many components.
- * 2024/08/14   ITA   1.02    Order of field constraints in queries to match the order of fields in composite indexes.
- * 2024/09/04   ITA   1.03    In the transformListings function, handle instance where the province/municipality/main-place/sub-place of a listing is not available in the provinces collection. This will eliminate errors
- *                            and enable users to be able to view and update their listings. Assign place names such listings as 'Unknown Province', 'Unknown Municipality', etc.
- * 2024/09/18   ITA   1.04    All variable names moved to the VarNames object. Renamed getListingsQueryObject appropriately to getListingsByPlaceQueryObject and added validation for place objects.
- *                            Added a separate getAllListingsQueryObject function, for getting query for requesting all listings.
- *                            Added a new QueryNames enumeration constant, for specifying the nature of listings query to be performed.
- *                            Listing count functions no longer used, removed.
+ * Start Date  End Date     Dev  Version  Description
+ * 2024/01/21               ITA  1.00     Genesis.
+ * 2024/05/16               ITA  1.01     Add more variables.
+ * 2024/06/22               ITA  1.02     Move function descriptions to the top, outside of each respective function, so as to be displayed on the documentation tips.
+ *                                        Rename QueryTypes to FetchTypes.
+ *                                        Improve the getListingsQueryObject, getListingsByUserIdQueryObject and getListingsPerMainPlaceQueryObject
+ *                                        to create a query fetching data after a specified document, or up to a specified document.
+ * 2024/07/14               ITA   1.03    getListingsByUserIdQueryObject: fix a bug. When the FetchType is END_AT_DOC, the query must use endAt, not startAfter.
+ *                                        Add priceRanges and PRICE_RANGES, to be usable with dropdowns, to enable users to select the price range of properties sought.
+ * 2024/08/08               ITA   1.01    Move the function transformListingData to this file, so as to have one centralised instance, instead of same function existing across many components.
+ * 2024/08/14               ITA   1.02    Order of field constraints in queries to match the order of fields in composite indexes.
+ * 2024/09/04               ITA   1.03    In the transformListings function, handle instance where the province/municipality/main-place/sub-place of a listing is not available in the provinces collection. This will eliminate errors
+ *                                        and enable users to be able to view and update their listings. Assign place names such listings as 'Unknown Province', 'Unknown Municipality', etc.
+ * 2024/09/18               ITA   1.04    All variable names moved to the VarNames object. Renamed getListingsQueryObject appropriately to getListingsByPlaceQueryObject and added validation for place objects.
+ *                                        Added a separate getAllListingsQueryObject function, for getting query for requesting all listings.
+ *                                        Added a new QueryNames enumeration constant, for specifying the nature of listings query to be performed.
+ *                                        Listing count functions no longer used, removed.
+ * 2025/12/31  2026/02/11   ITA   1.05    Remove the use getSortedObject(), it is unnecessary.
+ *                                        toZarCurrencyFormat now imported from some-common-functions-js.
+ *                                        getListingsByPlacesQueryObject() now query listings using price ranges.
  *                            
  */
 import { collection, collectionGroup, getDocs, getDoc, doc, query, where, 
-         or, and, orderBy, limit, startAfter, endAt } from 'firebase/firestore';
+         or, and, orderBy, limit, startAfter, endAt, Timestamp } from 'firebase/firestore';
 import { db } from '../config/appConfig.js';
-import { getSortedObject, toZarCurrencyFormat, hasAll } from './commonFunctions.js';
+import { toZarCurrencyFormat, hasAll } from 'some-common-functions-js';
 
 // For naming of context variables.
 export const VarNames = Object.freeze({
@@ -318,12 +321,28 @@ export function getSubPlace(provincialCode, municipalityCode, mainPlaceCode, sub
     return getDocument(path);
 } // export function getMunicipality(provincialCode, municipalityCode) {
 
-/** Build and return a query object based on the supplied parameters. 
- * @param {*} places An array of places. Can be an array of provincial codes (string array), municipalities or mainPlaces
+/** Build and return a query object based on an object with the following properties: 
+ * @param {Array} places 
+ * @param {string} transactionType 
+ * @param {string} propertyTypes 
+ * @param {number} numberOfBedrooms 
+ * @param {boolean} offersOnly 
+ * @param {number} numDocs 
+ * @param {object} snapshotDoc 
+ * @param {string} fetchType 
 */
-export function getListingsByPlacesQueryObject(places = null, transactionTypes = null, 
-                                                propertyTypes = null, numberOfBedrooms = null, offersOnly = false, 
-                                                numDocs = null, snapshotDoc = null, fetchType = null) {
+export function getListingsByPlacesQueryObject({
+                                                    places,
+                                                    transactionType,
+                                                    propertyTypes,
+                                                    numberOfBedrooms,
+                                                    priceFrom,
+                                                    priceTo,
+                                                    offersOnly = null,
+                                                    numDocs = null,
+                                                    snapshotDoc = null,
+                                                    fetchType = null
+                                                }) {
     let placeType;
     let collectionRef = collection(db, '/listings');
     const unFlaggedContraint = where('flagged', '==', false);
@@ -396,9 +415,9 @@ export function getListingsByPlacesQueryObject(places = null, transactionTypes =
 
     const moreConstraints = [];
 
-    if (transactionTypes?.length) {
+    if (transactionType) {
         moreConstraints.push(
-            where('transactionType', 'in', transactionTypes)
+            where('transactionType', '==', transactionType)
         );
     }
     if (propertyTypes?.length)
@@ -410,37 +429,52 @@ export function getListingsByPlacesQueryObject(places = null, transactionTypes =
             where('numBedrooms', 'in', numberOfBedrooms)
         );
 
-    if (offersOnly) {
-        moreConstraints.push(where('priceInfo.offer.expiryDate', '!=', null));
-    } // if (offersOnly) {
+    
+    // Ensure that the price range is supplied.
+    if (!(priceFrom))
+        throw new Error('priceFrom must be provided.');
+    if (!(priceTo))
+        throw new Error('priceTo must be provided.');
 
-    const moreConstraints2 = [];
+    const priceConstraints = [];
+    if (offersOnly) {
+        priceConstraints.push(where('priceInfo.offer.expiryDate', '>=', Timestamp.fromDate(new Date())));
+        priceConstraints.push(where('priceInfo.offer.discountedPrice', '>=', priceFrom));
+        priceConstraints.push(where('priceInfo.offer.discountedPrice', '<=', priceTo));
+    } // if (offersOnly) {
+    else {
+        priceConstraints.push(where('priceInfo.regularPrice', '>=', priceFrom));
+        priceConstraints.push(where('priceInfo.regularPrice', '<=', priceTo));
+    }
+
+    const orderByConstraints = [];
+    if (offersOnly) {
+        orderByConstraints.push(orderBy('priceInfo.offer.expiryDate', 'desc'));
+        orderByConstraints.push(orderBy('priceInfo.offer.discountedPrice'));
+    }
+    const fetchConstraints = [];
     if (numDocs !== null)
-        moreConstraints2.push(limit(numDocs));
+        fetchConstraints.push(limit(numDocs));
 
     if (snapshotDoc !== null) {
         if (fetchType === FetchTypes.START_AFTER_DOC)
-            moreConstraints2.push(startAfter(snapshotDoc));
+            fetchConstraints.push(startAfter(snapshotDoc));
         else if (fetchType === FetchTypes.END_AT_DOC) // Typically for creating listeners.
-            moreConstraints2.push(endAt(snapshotDoc));
+            fetchConstraints.push(endAt(snapshotDoc));
     } // if (snapshotDoc !== null) {
-
-    const andConstraints = [unFlaggedContraint];
-    if (addressConstraints.length > 0) {
-        andConstraints.push(or(...addressConstraints));
-    }
-    if (moreConstraints.length > 0) {
-        andConstraints.push(moreConstraints);
-    };
 
     const myQuery = query(
                     collectionRef,
                     and(
                         unFlaggedContraint,
                         or(...addressConstraints),
-                        ...moreConstraints
+                        and(
+                            ...moreConstraints,
+                            ...priceConstraints
+                        ),
                     ),
-                    ...moreConstraints2
+                    ...orderByConstraints,
+                    ...fetchConstraints
                 );
     return myQuery;
 } // function getListingsByPlacesQueryObject() {
@@ -448,7 +482,6 @@ export function getListingsByPlacesQueryObject(places = null, transactionTypes =
 
 /**Get query object for all unflagged listings. */
 export function getAllListingsQueryObject(numDocs = null, snapshotDoc = null, fetchType = null) {
-    console.log('getAllListingsQueryObject');
     let collectionRef = collection(db, '/listings');
     if (![null, FetchTypes.END_AT_DOC, FetchTypes.START_AFTER_DOC].includes(fetchType))
         throw(new Error(`fetchType must be one of ${FetchTypes.toString()}.`));
@@ -568,9 +601,10 @@ export async function getMunicipalitiesOfTheProvinces(provincialCodes) {
         await promises[idx]
                 .then(result=> {
                     const municipalities = result.map(doc=> {
-                        return getSortedObject({...doc, 
-                                    provincialCode: provincialCodes[idx]
-                                });
+                        return {
+                            ...doc, 
+                            provincialCode: provincialCodes[idx]
+                        };
                     });
                     outcomes.push(Promise.resolve(municipalities));
                 })
@@ -603,11 +637,11 @@ export async function getMainPlacesOfTheMunicipalities(municipalityObjects) {
                 .then(result=> {
                     const {provincialCode, code: municipalityCode} = municipalityObjects[idx];
                     const mainPlaces = result.map(doc=> {
-                        return getSortedObject({
-                                    ...doc,
-                                    provincialCode,
-                                    municipalityCode
-                                });
+                        return {
+                            ...doc,
+                            provincialCode,
+                            municipalityCode
+                        };
                     });
                     outcomes.push(Promise.resolve(mainPlaces));
                 })
@@ -635,12 +669,12 @@ export async function getSubPlacesOfTheMainPlaces(mainPlaceObjects) {
                 .then(results=> {
                     const {provincialCode, municipalityCode, code: mainPlaceCode} = mainPlaceObjects[idx];
                     const subPlaces = results.map(doc=> {
-                        return getSortedObject({
-                                    ...doc,
-                                    provincialCode,
-                                    municipalityCode,
-                                    mainPlaceCode
-                                });
+                        return {
+                            ...doc,
+                            provincialCode,
+                            municipalityCode,
+                            mainPlaceCode
+                        };
                     });
                     outcomes.push(Promise.resolve(subPlaces));
                 })

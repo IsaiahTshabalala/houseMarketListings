@@ -1,59 +1,94 @@
 /**
  * File: ./src/components/AccountInfo.js
- * ----------------------------------------------------------------------------
+ * ============================================================================
  * Description: 
  * Used to enable the user to view, capture or update their account information.
  * Also enables the user to enrol for 2nd factor SMS authentication.
- * ----------------------------------------------------------------------------
- * Date        Dev   Version  Description
- * 2023/11/20  ITA   1.00     Genesis.
- * 2024/06/16  ITA   1.01     Adjust the data from the userContext is retrieved.
- * 2024/07/07  ITA   1.02     The CollectionsProvider uses an improved mechanism for sorting data. Eliminate the use of the sortFields and
- *                            instead use the place names for sorting.
- * 2024/09/18  ITA   1.03     Context imported directly. Variable names moved into a single object named VarNames.
- *                            Current user state moved to Global State.
- *                            SMS authentication related features can now be turned on/off using the env variable REACT_APP_SMS_AUTH_ENABLED (true/false).
+ * ============================================================================
+ * Start Date  End Date       Dev   Version  Description
+ * 2023/11/20                 ITA   1.00     Genesis.
+ * 2024/06/16                 ITA   1.01     Adjust the data from the userContext is retrieved.
+ * 2024/07/07                 ITA   1.02     The CollectionsProvider uses an improved mechanism for sorting data. Eliminate the use of the sortFields and
+ *                                           instead use the place names for sorting.
+ * 2024/09/18                 ITA   1.03     Context imported directly. Variable names moved into a single object named VarNames.
+ *                                           Current user state moved to Global State.
+ *                                           SMS authentication related features can now be turned on/off using the env variable REACT_APP_SMS_AUTH_ENABLED (true/false).
+ * 2026/01/02  2026/02/11     ITA   1.04     Dropdowns now imported from dropdowns-js, where they were moved and refined.
+ *                                           useCollectionsContext() removed. Dropdowns no longer use it.
+ *                                           Form state data (object) split into smaller slices. So that key strokes cause a re-render to a small portion of the form instead of instead of the entire form, which is large.
+ *                                           Improved data validation and editing functionality in keeping up with split state data.
+ *                                           Moved a number of utility functions to an external package (some-common-functions-js) for further refinement, and reusability.
+ *                                           Replaced loDash object manipulation functions with newly created counterparts in some-common-functions-js.
 */
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useId } from 'react';
 import { useGlobalStateContext, ActionFunctions } from '../hooks/GlobalStateProvider.js';
-import { useCollectionsContext } from '../hooks/CollectionsProvider.js';
 import { doc, setDoc, Timestamp, deleteField } from 'firebase/firestore';
 import { db, isSignedIn, auth } from '../config/appConfig.js';
-import { getAllProvinces, getMunicipalitiesPerProvince, getMainPlacesPerMunicipality, getSubPlacesPerMainPlace,
-         VarNames } from '../utilityFunctions/firestoreComms.js';
+import { getAllProvinces, getMunicipalitiesPerProvince, getMainPlacesPerMunicipality, getSubPlacesPerMainPlace } from '../utilityFunctions/firestoreComms.js';
 import { ToastContainer, toast } from 'react-toastify';
-import { BiErrorCircle } from 'react-icons/bi';
-import { BsPencilFill, BsCheck } from 'react-icons/bs';
-import { MdCancel } from 'react-icons/md';
-import { hasValues, timeStampYyyyMmDd, isValidShortDescription, isValidMobileNo, isValidName,
-         isValidDisplayName, isValidStreetNo, deepClone } from '../utilityFunctions/commonFunctions.js';
+import { isValidShortDescription, isValidStreetNo, hasValues } from '../utilityFunctions/commonFunctions.js';
+import { get, set, timeStampYyyyMmDd, isValidName, isValidPhoneNum, getPaths } from 'some-common-functions-js';
 import toastifyTheme from './toastifyTheme.js';
 import '../w3.css';
 import EnrolUserForSMSAuth from './EnrolUserForSMSAuth.js';
 import Loader from './Loader.js';
-import Dropdown2 from './Dropdown2.js';
-const loDash = require('lodash');
+import { DropdownObj } from 'dropdowns-js';
+import 'dropdowns-js/style.css';
+import EditField from './EditField.jsx';
+import FieldError from './FieldError.jsx';
+import { useBackupStore } from '../hooks/BackupStore.js';
 
-const init = {
-    displayName: '',
-    firstName: '',
-    surname: '',
-    dateOfBirth: '',
-    complexName: '',
-    unitNo: '',
-    streetNo: '',
-    streetName: '',
-    provincialCode: '',
-    municipalityCode: '',
-    mainPlaceCode: '',
-    subPlaceCode: '',
-    mobileNo: ''
-};
-const keyStep = 0.001;
+// Initial form data structure.
+const init = Object.freeze({
+    personalInfo: {
+        displayName: '',
+        firstName: '',
+        surname: '',
+        dateOfBirth: ''
+    },
+    contactInfo: {
+        complexName: '',
+        unitNo: '',
+        streetNo: '',
+        streetName: '',
+        mobileNo: ''
+    },
+    gisCodes: {
+        provincialCode: '',
+        municipalityCode: '',
+        mainPlaceCode: '',
+        subPlaceCode: ''
+    }
+});
 
 function AccountInfo() {
-    const [formData, setFormData] = useState(init);
-    const [errors, setErrors] = useState({}); // Used to keep track of errors in each field.
+    const componentUid = useId();
+    // Form inputs state==================
+    const [personalInfo, setPersonalInfo] = useState({ ...init.personalInfo });
+    const [contactInfo, setContactInfo] = useState({ ...init.contactInfo });
+    const [gisCodes, setGisCodes] = useState({ ...init.gisCodes });
+    //====================================
+
+    // Form Input errors==================
+    const [personalInfoErrors, setPersonalInfoErrors] = useState({});
+    const [contactInfoErrors, setContactInfoErrors] = useState({});
+    const [gisCodeErrors, setGisCodeErrors] = useState({});
+    //======================================
+
+    // Dropdown data======================-
+    const [provinces, setProvinces] = useState([]);
+    const [municipalities, setMunicipalities] = useState([]);
+    const [mainPlaces, setMainPlaces] = useState([]);
+    const [subPlaces, setSubPlaces] = useState([]);
+    const sortFields = ['name asc'];
+    //======================================
+
+    // Default selected dropdown data
+    const [selectedProvince, setSelectedProvince] = useState(null);
+    const [selectedMunicipality, setSelectedMunicipality] = useState(null);
+    const [selectedMainPlace, setSelectedMainPlace] = useState(null);
+    const [selectedSubPlace, setSelectedSubPlace] = useState(null);
+
     const [updateMode, setUpdateMode] = useState(false); /* Update mode set to true means the user had populated their account data before.
                                                             and is likely to perform an update.
                                                             Update mode set to false means the user is capturing their account data for the first time.
@@ -63,14 +98,12 @@ function AccountInfo() {
         return temp === 'true';
     })();
 
-    const [editableFields, setEditableFields] = useState({}); // Used to keep track of edited fields. By keeping their previous state.
+    const backupStore = useBackupStore(); // Used to keep track of edited fields. By keeping their previous version.
  
     // Message to be displayed while data is loading. Null when complete.
     const [loadingMessage, setLoadingMessage] = useState(null);
 
     const { getSlice, dispatch } = useGlobalStateContext();
-    const { addCollection, getCollectionData, getSelected,
-            setSelected, updateCollection, collectionExists } = useCollectionsContext();
     const firstRender = useRef(true);
 
     const [provincesLoaded, setProvincesLoaded] = useState(true);
@@ -78,41 +111,24 @@ function AccountInfo() {
     const [mainPlacesLoaded, setMainPlacesLoaded] = useState(true);
     const [subPlacesLoaded, setSubPlacesLoaded] = useState(true);
 
-    /* The key variable below, whenever they are set, cause a re-render of the respective dropdown.
-       Helpful after repopulating a collection or a selected item of a dropdown, outside of the dropdown. */    
-    const [provincesKey, setProvincesKey] = useState(Math.random());
-    const [municipalitiesKey, setMunicipalitiesKey] = useState(Math.random());
-    const [mainPlacesKey, setMainPlacesKey] = useState(Math.random());
-    const [subPlacesKey, setSubPlacesKey] = useState(Math.random());
-    
     /**Set the provincial code of the form data to that of the selected province in the provinces dropdown.
      * Also reload the municpalities dropdown with the municipalities of the currently selected province. */
-    async function provinceSelected() {
+    async function provinceSelected(selProvince) {
         try {
-            let result = getSelected(VarNames.PROVINCES);
-            let selectedProvince = null;
-            if (result.length > 0)
-                selectedProvince = result[0];
-
-            if (formData.provincialCode === selectedProvince.code) // Do not proceed if there was no real change in the selection of the municipality code.
+            if (gisCodes.provincialCode === selProvince.code) // Do not proceed if there was no real change in the selection of the municipality code.
                 return;                           // This is to save the cost of unnecessary trips to Firestore.
           
-            const newFormData = deepClone({...formData});
-            newFormData.provincialCode = selectedProvince.code; // Set the form provincial code to that of the currently selected province.
-            setFormData(newFormData);
+            const newGisCodes = { ...gisCodes, provincialCode: selProvince.code }; // Set the form provincial code to that of the currently selected province.
+            setGisCodes(newGisCodes);
+            setSelectedProvince(selProvince); // Synchronise the selected province state with the one in the dropdown.
 
             // Get municipalities linked to the selected province.
             setMunicipalitiesLoaded(false);
-            let municipalities = [];
-            municipalities = await getMunicipalitiesPerProvince(selectedProvince.code);
-
-            updateCollection(VarNames.MUNICIPALITIES, municipalities); 
+            setMunicipalities(await getMunicipalitiesPerProvince(selProvince.code));
         } catch (error) {
             toast.error(error, toastifyTheme);
         } finally {
-            setMunicipalitiesKey(municipalitiesKey + keyStep);
             setMunicipalitiesLoaded(true);
-            validate();
         }
     } // function async provinceSelected(code) {
 
@@ -120,98 +136,68 @@ function AccountInfo() {
      * municipalities dropdown.
      * Also reload the main places dropdown with the main places of the currently selected municipality.
     */
-    async function municipalitySelected() {
+    async function municipalitySelected(selMunicipality) {
         try {
-            let selectedMunicipality = null;
-            const result = getSelected(VarNames.MUNICIPALITIES); // Length 1 array expected.
-            if (result.length > 0)
-                selectedMunicipality = result[0];
-
-            if (formData.municipalityCode === selectedMunicipality.code) // Do no proceed if there was no real change in the municipality code selection.
+            if (gisCodes.municipalityCode === selMunicipality.code) // Do no proceed if there was no real change in the municipality code selection.
                 return;
             
-            const newFormData = deepClone({...formData});
-            newFormData.municipalityCode = selectedMunicipality.code;
-            setFormData(newFormData);
-
+            const newGisCodes = { ...gisCodes, municipalityCode: selMunicipality.code };
+            setGisCodes(newGisCodes);
+            setSelectedMunicipality(selMunicipality); // Synchronise the selected municipality state with the one in the dropdown.
+            console.log(newGisCodes);
             // Obtain the main places of the selected municipality.
             setMainPlacesLoaded(false);
-            let mainPlaces = [];
-            mainPlaces = await getMainPlacesPerMunicipality(newFormData.provincialCode, newFormData.municipalityCode);
-            
-            updateCollection(VarNames.MAIN_PLACES, mainPlaces);
+            const tempMainPlaces = await getMainPlacesPerMunicipality(newGisCodes.provincialCode, newGisCodes.municipalityCode);
+            setMainPlaces(tempMainPlaces);
         } catch (error) {
-            toast.error(error, toastifyTheme);            
+            toast.error(error, toastifyTheme);         
         } finally {
-            setMainPlacesKey(mainPlacesKey + keyStep);    
             setMainPlacesLoaded(true);
-            validate();
         } // finally
-        
     } // async function municipalitySelected(code) {
 
-    async function mainPlaceSelected() {
+    async function mainPlaceSelected(selMainPlace) {
         /* Update the form data with main-place code of the currently selected main place in the main places dropdown.
            Also reload the sub-places dropdown with the sub-places of the currently selected main place.
         */ 
         try {
-            let selectedMainPlace = null;
-            const result = getSelected(VarNames.MAIN_PLACES);
+            if (gisCodes.mainPlaceCode === selMainPlace.code) // Do not proceed if there was no real change in the main place selection.
+                return;
+    
+            const newGisCodes = { ...gisCodes, mainPlaceCode: selMainPlace.code };
+            setGisCodes(newGisCodes);
 
-            if (result.length > 0)
-                selectedMainPlace = result[0];
-    
-            if (selectedMainPlace === null)
-                return;
-    
-            if (formData.mainPlaceCode === selectedMainPlace.code) // Do not proceed if there was no real change in the main place selection.
-                return;
-    
-            const newFormData = deepClone({...formData, mainPlaceCode: selectedMainPlace.code});
-            setFormData(newFormData);
+            setSelectedMainPlace(selMainPlace); // Synchronise the selected main place state with the one in the dropdown.
     
             // Get the sub-places linked to the selected main place.
             setSubPlacesLoaded(false);
             let subPlaces = [];
-            // An array of sub-places of a particular main place.
-            subPlaces = await getSubPlacesPerMainPlace(newFormData.provincialCode, newFormData.municipalityCode, newFormData.mainPlaceCode);
-            updateCollection(VarNames.SUB_PLACES, subPlaces);            
+            setSubPlaces(await getSubPlacesPerMainPlace(newGisCodes.provincialCode, newGisCodes.municipalityCode, newGisCodes.mainPlaceCode));
         } catch (error) {
             toast.error(error, toastifyTheme);
         } finally {
-            setSubPlacesKey(subPlacesKey + keyStep);
-            setSubPlacesLoaded(true)
-            validate();
+            setSubPlacesLoaded(true);
         } // finally
     } // async function mainPlaceSelected() {
 
-    async function subPlaceSelected() {
+    async function subPlaceSelected(selSubPlace) {
         // Update the sub-place code of the form data to that of the currently selected sub-place in the sub-places dropdown.
         try {
-            let selectedSubPlace = null;        
-            let result = getSelected(VarNames.SUB_PLACES);
-            if (result.length > 0)
-                selectedSubPlace = result[0];
-    
-            if (selectedSubPlace === null)
-                return;
-    
-            if (formData.subPlaceCode === selectedSubPlace.code) // Do not proceed if there was no real change in the sub-place code selection.
+            if (gisCodes.subPlaceCode === selSubPlace.code) // Do not proceed if there was no real change in the sub-place code selection.
                 return;
             
-            const newFormData = deepClone({...formData, subPlaceCode: selectedSubPlace.code});
-            setFormData(newFormData);
-            
+            const newGisCodes = { ...gisCodes, subPlaceCode: selSubPlace.code};
+            setGisCodes(newGisCodes);
+            setSelectedSubPlace(selSubPlace); // Synchronise the selected sub-place state with the one in the dropdown. 
         } catch (error) {
             toast.error(error, toastifyTheme);
-        } finally {            
-            validate();  
+        } finally {
         } // finally
     } // async function subPlaceSelected(code) {
 
 
     function fieldsEdited() { // Indicate whether there any fields that were edited on the form.
-        return Object.keys(editableFields).length > 0;
+        return backupStore.hasValues();
     }
 
     function disableButton() {
@@ -226,188 +212,289 @@ function AccountInfo() {
         return true;
     } // function disableButton()
 
-    async function toggleEditable(fieldPath) { // NB. fieldPath is path to be one of editableFields object's fieldss
-        /** Toggle field editability as follows:
-         * If the field (path) is found in editable fields, restore its previous value to the form data 
-         * and remove the field (path) from editable fields.
-         * Else if a field (path) is not found in editable fields, store it in editable fields.
-         * */
-        if (isEditable(fieldPath)) {
-            // revert to the previous field value.
-            const tempFormData = deepClone(formData);
-            const revertValue = loDash.get(editableFields, fieldPath, ''); // Get the field (path) value from the editableFields object
-            const editValue = loDash.get(tempFormData, fieldPath, '');
-            loDash.set(tempFormData, fieldPath, revertValue); // Restore it to formData
-            setFormData(tempFormData);
+    /**Enable editing of fields or cancellation of edits. */
+    function getEditComponent(path) {
+        return (
+            <EditField 
+                backupCallback={()=> backup(path)}
+                revertCallback={()=> revert(path)}
+                displayEditIcon={isNotEditable(path)}
+            />
+        );
+    }
 
-            // Remove the field from editable fields
-            const tempEditableFields = deepClone(editableFields);
-            loDash.unset(tempEditableFields, fieldPath); // Remove the field (path) from editableFields object
-            setEditableFields(tempEditableFields);
+    function backupSelectedPlace(placeType) {
+        let path = `selectedPlaces.${placeType}`;
+        let selBackup;
+        switch (placeType) {
+            case 'province':
+                selBackup = { ...selectedProvince };
+                break;
+            case 'municipality':
+                selBackup = { ...selectedMunicipality };
+                break;
+            case 'mainPlace':
+                selBackup = { ...selectedMainPlace };
+                break;
+            case 'subPlace':
+                selBackup = { ...selectedSubPlace };
+                break;
+            default:
+                break;
+        }
+        if (!selBackup)
+            return;
+        backupStore.store(path, selBackup);
+    }
+    
+    /**Called for backing up places arrays */
+    function backupPlaces(placesType) {
+        let path;
+        let places;
+        switch (placesType) {
+            case 'municipalities':
+                places = [ ...municipalities ];
+                break;
+            case 'mainPlaces':
+                places = [ ...mainPlaces  ];
+                break;
+            case 'subPlaces':
+                places = [ ...subPlaces  ];
+                break;
+            default:
+                break;
+        }        
+        if (!places)
+            return;
 
-            // Also remove error(s) associated with the field (path)
-            const tempErrors = deepClone(errors);
-            loDash.unset(tempErrors, fieldPath); // Clear the errors object of the field (path)
-            setErrors(tempErrors);
+        path = `places.${placesType}`;
+        backupStore.store(path, places);
+    }
 
-            // (revertValue !== editValue) is used to check if a true reversion of values has taken place.
-            // So as to not reload data unnecessarily.
-            if ((revertValue !== editValue) && ['provincialCode', 'municipalityCode', 'mainPlaceCode', 'subPlaceCode'].includes(fieldPath)) {
-                let provinces = [],
-                    municipalities = [],
-                    mainPlaces = [],
-                    subPlaces = [],
-                    selectedProvince = null,
-                    selectedMunicipality = null,
-                    selectedMainPlace = null,
-                    selectedSubPlace = null;
-                try {
-                    switch (fieldPath) {
-                        case 'provincialCode': 
-                        // If the provincial code was reverted then:
-                            // Set the selected province to the value reverted to.
-                            provinces = [];
-                            provinces = getCollectionData(VarNames.PROVINCES);
-    
-                            selectedProvince = provinces.find(province=> province.code === tempFormData.provincialCode);
-                            if (selectedProvince !== undefined)
-                                setSelected(VarNames.PROVINCES, [selectedProvince]);
-    
-                            // Re-render the provinces dropdown.
-                            setProvincesKey(provincesKey + keyStep);
-    
-                            // Re-load the municipalities in accordance with the provincial code reverted to.
-                            setMunicipalitiesLoaded(false);
-                            await getMunicipalitiesPerProvince(tempFormData.provincialCode)
-                                    .then(result=> { // An array of municipalities of a particular province.
-                                        municipalities = result;
-                                    });
-                            
-                            updateCollection(VarNames.MUNICIPALITIES, municipalities);
-    
-                            // Set the selected municipality.
-                            selectedMunicipality = municipalities.find(municipality=> municipality.code === tempFormData.municipalityCode);
-                            if (selectedMunicipality !== undefined)
-                                setSelected(VarNames.MUNICIPALITIES, [selectedMunicipality]);
-    
-                            setMunicipalitiesKey(municipalitiesKey + keyStep); // Re-render the municipalities dropdown.
-                            setMunicipalitiesLoaded(true);
-                            break;
-                        case 'municipalityCode':                        
-                        // If the municipalityCode was reverted, then:
-                            // Set the selected municipality to the value reverted to:
-                            municipalities = [];
-                            municipalities = getCollectionData(VarNames.MUNICIPALITIES);
-    
-                            selectedMunicipality = municipalities.find(municipality=> municipality.code === tempFormData.municipalityCode);
-                            if (selectedMunicipality !== undefined)
-                                setSelected(VarNames.MUNICIPALITIES, [selectedMunicipality]);
-    
-                            setMunicipalitiesKey(municipalitiesKey + keyStep); // re-render the municipalities drop down.
-    
-                            // Re-load the main places.
-                            mainPlaces = [];
-                            setMainPlacesLoaded(false);
-                            await getMainPlacesPerMunicipality(tempFormData.provincialCode, tempFormData.municipalityCode)
-                                    .then(result=> mainPlaces = result);
-    
-                            updateCollection(VarNames.MAIN_PLACES, mainPlaces);
-    
-                            selectedMainPlace = mainPlaces.find(mainPlace=> mainPlace.code === tempFormData.mainPlaceCode);
-                            if (selectedMainPlace !== undefined)
-                                setSelected(VarNames.MAIN_PLACES, [selectedMainPlace]);
-    
-                            setMainPlacesKey(mainPlacesKey + keyStep);
-                            setMainPlacesLoaded(true);
-                            break;
-                        case 'mainPlaceCode':                            
-                        // If the main place code was reverted, then:
-                            // Set the selected main place to the value that was reverted to.
-                            mainPlaces = [];
-                            selectedMainPlace = null;
-                            mainPlaces = getCollectionData(VarNames.MAIN_PLACES);
+    function backup(path) {
+        path = path.replace(/-/gi, '.');
+        const stateName = path.split('.')[0];
+        const subPath = path.substring(stateName.length + 1);
+        let obj;
+        switch (stateName) {
+            case 'personalInfo':
+                obj = personalInfo;
+                break;
+            case 'contactInfo':
+                obj = contactInfo;
+                break;
+            case 'gisCodes':
+                obj = gisCodes;
 
-                            selectedMainPlace = mainPlaces.find(mainPlace=> mainPlace.code === tempFormData.mainPlaceCode);
-
-                            if (selectedMainPlace !== undefined)
-                                setSelected(VarNames.MAIN_PLACES, [selectedMainPlace]);
-                            
-                            setMainPlacesKey(mainPlacesKey + keyStep); // Cause the re-render of the main places dropdown.
-    
-                            // Re-load the sub-places.
-                            subPlaces = [];
-                            setSubPlacesLoaded(false);
-    
-                            // Get the sub-places 
-                            await getSubPlacesPerMainPlace(tempFormData.provincialCode, tempFormData.municipalityCode, tempFormData.mainPlaceCode)
-                                    .then(result=> subPlaces = result);
-                                
-                            updateCollection(VarNames.SUB_PLACES, subPlaces);
-    
-                            selectedSubPlace = subPlaces.find(subPlace=> subPlace.code === tempFormData.subPlaceCode);
-                            if (selectedSubPlace !== undefined)
-                                setSelected(VarNames.SUB_PLACES, [selectedSubPlace]);
-    
-                            setSubPlacesKey(subPlacesKey + keyStep);
-                            setSubPlacesLoaded(true);
-                            break;
-                        case 'subPlaceCode':
-                        // If the sub place code was reverted, then:
-                            // Set the selected sub-place to the value that was reverted to:
-                            subPlaces = [];
-                            subPlaces = getCollectionData(VarNames.SUB_PLACES);
-                            selectedSubPlace = subPlaces.find(subPlace=> subPlace.code === tempFormData.subPlaceCode);
-                            if (selectedSubPlace !== undefined)
-                                setSelected(VarNames.SUB_PLACES, [selectedSubPlace]);
-                            setSubPlacesKey(subPlacesKey + keyStep);
-                            break;
-                    } // switch (fieldPath) {                    
-                } catch (error) {
-                    console.log(error);
-                    toast.error('An error occurred!', toastifyTheme);
+                // Back up the dropdown data (lists and selected items).
+                let placesType, placeType;
+                switch (subPath) {
+                    case 'provincialCode': // The original provincial code.
+                        placesType = 'municipalities'; // To back up the (original) municipalities related to this provincial code.
+                        placeType = 'province'; // To back up the selected (original) province.
+                        break;
+                    case 'municipalityCode': // The original municipality code.
+                        placesType = 'mainPlaces'; // To back up the (original) main places related to this municipality code.
+                        placeType = 'municipality'; // To back up the selected (original) municipality.
+                        break;
+                    case 'mainPlaceCode': // The original main place code.
+                        placesType = 'subPlaces'; // To back up the (original) sub places related to this main place code.
+                        placeType = 'mainPlace'; // To back up the selected (original) main place.
+                        break;
+                    case 'subPlaceCode': // The original sub place code.
+                        placeType = 'subPlace'; // To back up the selected (original) sub place.
+                        break;
                 }
-            } // if ((revertValue !== editValue) && ['provincialCode', 'municipalityCode', 'mainPlaceCode'].includes(fieldPath)) {
+                if (placesType)
+                    backupPlaces(placesType);
+                if (placeType)
+                    backupSelectedPlace(placeType);    
+                break;
+            default:
+                break;
+        }
+        if (obj) {
+            backupStore.store(path, get(obj, subPath));
+        }
+    }
 
-        } // if (isEditable(fieldPath)) {
-        else { // Store the current value in editable fields
-            const tempEditableFields = deepClone(editableFields);
-            const value = loDash.get(formData, fieldPath); // Get the field (path) from the form data
-            loDash.set(tempEditableFields, fieldPath, value); // Store it in editableFields object
-            setEditableFields(tempEditableFields);
-        } // else
-    } // async function toggleEditable(fieldPath)
+    function revertSelectedPlace(placeType) {
+        let path = `selectedPlaces.${placeType}`;
+        const place = backupStore.getAndClear(path);
+        if (!place)
+            return;
+        switch (placeType) {
+            case 'province':                
+                setSelectedProvince({ ...place });
+                break;
+            case 'municipality':
+                setSelectedMunicipality({ ...place });
+                break;
+            case 'mainPlace':
+                setSelectedMainPlace({ ...place });
+                break;
+            case 'subPlace':
+                setSelectedSubPlace({ ...place });
+                break;
+            default:
+                break;
+        }
+    }
 
-    function isEditable(fieldPath) {
-    // Basically check if a field is one that is in the editableFields object.
-    // NB. field parameter must be one of nested fields of object editableFields.
+    function revertPlaces(placesType) {
+        let path = `places.${placesType}`;        
+        const places = backupStore.getAndClear(path);
+        if (!places)
+            return;
+
+        switch (placesType) {
+            case 'municipalities':
+                setMunicipalities(places);
+                break;
+            case 'mainPlaces':
+                setMainPlaces(places);
+                break;
+            case 'subPlaces':
+                setSubPlaces(places);
+                break;
+        }
+    }
+
+    function revert(path) {
+        path = path.replace(/-/gi, '.');
+        const stateName = path.split('.')[0];
+        const subPath = path.substring(stateName.length + 1);
+        let obj;
+
         
+        switch (stateName) {
+            case 'personalInfo':
+                obj = backupStore.getUpdatedIfDiff(personalInfo, path);
+                if (obj) { // There were changes.
+                    setPersonalInfo(obj);
+                    validatePersonalInfo(obj);
+                }
+                break;
+            case 'contactInfo':
+                obj = backupStore.getUpdatedIfDiff(contactInfo, path);
+                if (obj) {
+                    setContactInfo(obj);
+                    validateContactInfo(obj);
+                }
+                break;
+            case 'gisCodes':
+                obj = backupStore.getUpdatedIfDiff(gisCodes, path);
+                if (obj) {
+                    setGisCodes(obj);
+                    validateGisCodes(obj);
+                }
+                
+                // Revert the dropdown data were applicable.
+                let placesType, placeType;
+                switch (subPath) {
+                    case 'provincialCode': // To revert to the original provincial code.
+                        placesType = 'municipalities'; // To revert to the (original) municipalities linked to this provincial code.
+                        placeType = 'province'; // To revert to the original selected province.
+                        break;
+                    case 'municipalityCode': // To revert to the original municipality code.
+                        placesType = 'mainPlaces'; // To revert to the (original) main places linked to this municipality code.
+                        placeType = 'municipality'; // To revert to the original selected municipality.
+                        break;
+                    case 'mainPlaceCode': // To revert to the original main place code.
+                        placesType = 'subPlaces'; // To revert to the (original) sub places linked to this main place code.
+                        placeType = 'mainPlace'; // To revert to the original selected main place.
+                        break;
+                    case 'subPlaceCode':
+                        placeType = 'subPlace'; // To revert to the original selected sub place.
+                        break;
+                }
+                if (placesType)
+                    revertPlaces(placesType);
+                if (placeType)
+                    revertSelectedPlace(placeType);                    
+            break;
+        }        
+    }
+
+    /**Revert all the state data where changes were made. */
+    function revertAll() {
+        const paths = backupStore.getPaths();
+        let tempPersonalInfo,
+            tempContactInfo,
+            tempGisCodes;
+        const subPaths = [];
+
+        for (const idx in paths) {
+            const path = paths[idx];
+            const stateName = path.split('.')[0];
+            const subPath = path.substring(stateName.length + 1);
+            console.log(subPath);
+            switch (stateName) {
+                case 'personalInfo':
+                    tempPersonalInfo = tempPersonalInfo || personalInfo;
+                    tempPersonalInfo = backupStore.getUpdatedIfDiff(tempPersonalInfo, path) || tempPersonalInfo;
+                    break;
+                case 'contactInfo':
+                    tempContactInfo = tempContactInfo || contactInfo;
+                    tempContactInfo = backupStore.getUpdatedIfDiff(tempContactInfo, path) || tempContactInfo;
+                    break;
+                case 'gisCodes':
+                    tempGisCodes = tempGisCodes || gisCodes;
+                    tempGisCodes = backupStore.getUpdatedIfDiff(tempGisCodes, path) || tempGisCodes;
+                    subPaths.push(subPath);
+                    break;
+                default:
+                    break;
+            }
+        }
+        console.log(tempPersonalInfo, tempContactInfo);
+        if (tempPersonalInfo) // There was revertion [because of edited] personalInfo fields.
+            setPersonalInfo(tempPersonalInfo);
+        if (tempContactInfo) // There was revertion of contactInfo fields.
+            setContactInfo(tempContactInfo);
+        if (tempGisCodes) { // There was revertion of gisCode fields.
+            setGisCodes(tempGisCodes);
+
+            // Revert the dropdown data where applicable.
+            for (const idx in subPaths) {
+                let placesType, placeType;
+                switch (subPaths[idx]) {
+                    case 'provincialCode': // To revert to the original provincial code.
+                        placesType = 'municipalities'; // To revert to the (original) municipalities linked to this provincial code.
+                        placeType = 'province'; // To revert to the original selected province.
+                        break;
+                    case 'municipalityCode': // To revert to the original municipality code.
+                        placesType = 'mainPlaces'; // To revert to the (original) main places linked to this municipality code.
+                        placeType = 'municipality'; // To revert to the original selected municipality.
+                        break;
+                    case 'mainPlaceCode': // To revert to the original main place code.
+                        placesType = 'subPlaces'; // To revert to the (original) sub places linked to this main place code.
+                        placeType = 'mainPlace'; // To revert to the original selected main place.
+                        break;
+                    case 'subPlaceCode':
+                        placeType = 'subPlace'; // To revert to the original selected sub place.
+                        break;
+                }
+                if (placesType)
+                    revertPlaces(placesType);
+                if (placeType)
+                    revertSelectedPlace(placeType);  
+            }
+        }
+    }
+    
+
+    /** Basically check if this path has an entry in the backupStore. */
+    function isEditable(fieldPath) {
         if (!updateMode) // Meaning this is a new account data capture. Return true.
             return true;
 
-        return loDash.get(editableFields, fieldPath) !== undefined;
+        return backupStore.get(fieldPath) !== undefined;
     } // function isEditable(fieldPath)
 
     function isNotEditable(fieldPath) {
         return !isEditable(fieldPath);
     } // function isNotEditable(field)
-
-    function getEditIcon(fieldPath) {
-        
-        if (updateMode) {
-            // Return the right html to display the edit/cancel icon.
-            const icon = isEditable(fieldPath)?    // is the field path in the editableFields?
-                                                    <><MdCancel/>Cancel Edit</>
-                                                        : 
-                                                    <><BsPencilFill/>Edit</>;
-            return (
-                <div className='w3-btn w3-small w3-text-black' onClick={e=> {toggleEditable(fieldPath)}}>
-                    {icon}
-                </div>
-            );
-        } // function getEditIcon(field)
-
-        return null;
-    }
 
     async function retrieveAccountInfo() {
     // Retrieve user data from Firestore and populate the form data.
@@ -417,216 +504,12 @@ function AccountInfo() {
         
         setLoadingMessage('Retrieving your account information ...');
         
-        let data = deepClone({...init});
         // If the user (personalDetails) data is already there in the global state, retrieve from there,
-        // to reduce trips (and related costs) Firestore.
+        // to reduce fetch trips (and related costs) to Firestore.
         const personalDetails = getSlice('authCurrentUser.personalDetails');
-
-        try {
-            if (personalDetails) {
-                if (personalDetails?.displayName) {
-                    data = {...data, displayName: personalDetails.displayName};
-                }
-                data = {...data, ...personalDetails};
-                data = {...data, ...data.address};
-                delete data['address'];
-                data.dateOfBirth = timeStampYyyyMmDd(new Date(data.dateOfBirth.toString()));
-                setFormData(data);
-                setUpdateMode(true); // Indicate that the form has been populated with data, and updates can be done by user.
-                                    // Meaning the user can selectively update/edit the fields.
-            } // if (personalDetails)
-            else {
-                setUpdateMode(false); // Meaning this is a new account info entry.
-            } // else
-        } // try
-        catch (error) {
-            console.log(error);
-            toast.error('Some error occurred here. Please try again.', toastifyTheme);
-            return false;
-        } // catch (error)
-        finally {            
-            setFormData(data);
-            setLoadingMessage(null);
-        } // finally
-
-        try {
-            // Set the values displayed by the dropdowns.
-            // Set the currently selected provincial code in the Dropdown.
-            let provinces = [];
-            setProvincesLoaded(false);            
-            
-            if (collectionExists(VarNames.PROVINCES))
-                provinces = getCollectionData(VarNames.PROVINCES);
-            else {
-                // At this stage, the Provinces collection had not been set. Retrieve from Firestore instead.
-                provinces = await getAllProvinces();
-            }
-            
-            // Load the municipalities of the user address' provincial code.
-            if (data !== null) {
-                // Set the selected province in the provinces collection of the collectionsContext.
-                const selectedProvince = provinces.find(prov=>{
-                    return prov.code === data.provincialCode;
-                });
-                if (selectedProvince !== undefined) {
-                    setSelected(VarNames.PROVINCES, [selectedProvince]);
-                    setProvincesKey(provincesKey + keyStep);
-                } // if (selectedProvince !== undefined) {
-
-                let municipalities = [];  
-                setMunicipalitiesLoaded(false);
-                if (data.provincialCode !== '' && data.municipalityCode !== '' 
-                    && data.mainPlaceCode !== '' && data.subPlaceCode !== '') {
-                    municipalities = await getMunicipalitiesPerProvince(data.provincialCode);
-                    updateCollection(VarNames.MUNICIPALITIES, municipalities);
-                    // Set the currently selected municipality code in the dropdown.
-                    const selectedMunicipality = municipalities.find(municipality=> {
-                        return municipality.code === data.municipalityCode;
-                    });
-                    if (selectedMunicipality !== undefined) {
-                        setSelected(VarNames.MUNICIPALITIES, [selectedMunicipality]);
-                    }
-                    
-                    // Load the main places of the user address' municipality code
-                    setMainPlacesLoaded(false);
-                    let mainPlaces = [];
-                    mainPlaces = await getMainPlacesPerMunicipality(data.provincialCode, data.municipalityCode);
-        
-                    updateCollection(VarNames.MAIN_PLACES, mainPlaces);
-        
-                    // Set the currently selected main place.
-                    const selectedMainPlace = mainPlaces.find(mainPlace=> mainPlace.code === data.mainPlaceCode);
-                    if (selectedMainPlace !== undefined)
-                        setSelected(VarNames.MAIN_PLACES, [selectedMainPlace]);
-        
-                    // Load the sub-places of the user address' main place code
-                    setSubPlacesLoaded(false);
-                    let subPlaces = [];
-                    subPlaces = await getSubPlacesPerMainPlace(data.provincialCode, data.municipalityCode, data.mainPlaceCode);
-                    updateCollection(VarNames.SUB_PLACES, subPlaces);
-                    
-                    // Set the currently selected subPlace
-                    const selectedSubPlace = subPlaces.find(subPlace=> subPlace.code === data.subPlaceCode);
-                    if (selectedSubPlace !== undefined)
-                        setSelected(VarNames.SUB_PLACES, [selectedSubPlace]);
-                } // if (data.provincialCode !== '') {            
-            } // if (data !== null) {
-            
-        } catch (error) {
-            console.log(error);
-            toast.error(error, toastifyTheme);
-        } finally {
-            setLoadingMessage(null); // Remnove the spinner and display the loaded data.
-            setProvincesKey(provincesKey + keyStep);
-            setProvincesLoaded(true);
-            setMunicipalitiesLoaded(true);
-            setMunicipalitiesKey(municipalitiesKey + keyStep); // Cause the municipalities dropdown to re-render.
-            setMainPlacesLoaded(true);
-            setMainPlacesKey(mainPlacesKey + keyStep);
-            setSubPlacesLoaded(true);
-            setSubPlacesKey(subPlacesKey + keyStep); // Cause the sub-places dropdown to re-render.
-        } // finally
-    } // async function retrieveAccountInfo()
-        
-    function handleChange(e) {
-        setFormData(deepClone({...formData, [e.target.name]: e.target.value}));
-        validate();        
-    } // function handleChange(e)
-
-    function showErrorIcon(fieldPath) {
-        return (
-            <>
-                {loDash.get(errors, fieldPath) !== undefined?
-                    <div className='w3-small w3-text-black'><BiErrorCircle/>{errors[fieldPath]}</div>
-                    :
-                    <div className='w3-small w3-text-black' style={{opacity: '0'}}>
-                        <BsCheck/>
-                    </div>
-                }
-            </>
-        );
-    } //    function showErrorIcon(fieldPath)
-
-    async function validate() {    
-        const checkList = {};
-        if (isValidDisplayName(formData.displayName) === false)
-            checkList.displayName = 'Invalid display name!';
-        if (isValidName(formData.firstName) === false)
-            checkList.firstName = 'Please fill in a valid First Name!';
-        
-        if (isValidName(formData.surname) === false)
-            checkList.surname = 'Please fill in a valid Surname!';
-        
-        // Date of birth must be 18 to 100 years old.
-        let currDateMilliSec = new Date().getTime();
-        let yearsToMilliSec = 365.25 * 24 * 60 * 60 * 1000;
-
-        let dateDiff = currDateMilliSec - new Date(formData.dateOfBirth).getTime(); // birth date in milliseconds.
-        let valid = dateDiff >= 18 * yearsToMilliSec
-                    && dateDiff <= 100 * yearsToMilliSec;
-
-        if (valid === false)
-            checkList.dateOfBirth = 'Must be 18 to 100 years old!';
-        
-        if (formData.complexName !== '' && isValidShortDescription(formData.complexName) === false) 
-            checkList.complexName = 'Please fill in a valid Complex Name!';
-        
-        if (formData.unitNo !== '' && isValidStreetNo(formData.unitNo) === false)
-            checkList.unitNo = 'Please fill in a valid Unit No!';
-        
-        if (isValidStreetNo(formData.streetNo) === false)
-            checkList.streetNo = 'Please fill in a valid Street No!';
-        
-        if (formData.streetName !== '' && isValidShortDescription(formData.streetName) === false)
-            checkList.streetName = 'Please fill in a valid Street Name!';
-        
-        let provinces = [];
-        provinces = getCollectionData(VarNames.PROVINCES);
-        if (provinces.findIndex(province=> {
-                return formData.provincialCode === province.code;
-            }) < 0)
-            checkList.provincialCode = 'Please choose a valid province!';
-        
-        let municipalities = [];
-        municipalities = getCollectionData(VarNames.MUNICIPALITIES);
-        if (municipalities.findIndex(municipality=> {
-                    return formData.municipalityCode === municipality.code;
-                }) < 0)
-            checkList.municipalityCode = 'Please choose a valid municipality!';
-        
-        let mainPlaces = [];
-        mainPlaces = getCollectionData(VarNames.MAIN_PLACES);
-        if (mainPlaces.findIndex(mainPlace=> {
-            return formData.mainPlaceCode === mainPlace.code;
-        }) < 0)
-            checkList.mainPlaceCode = 'Please choose a valid main place!';
-        
-        let subPlaces = [];
-        subPlaces = getCollectionData(VarNames.SUB_PLACES);
-        if (subPlaces.findIndex(subPlace=> {
-            return formData.subPlaceCode === subPlace.code;
-        }) < 0)
-            checkList.subPlaceCode = 'Please choose a valid sub-place !';
-        
-        if (isValidMobileNo(formData.mobileNo) === false)
-            checkList.mobileNo = 'Please fill in a valid Mobile Number!';
-
-        setErrors(checkList);
-        return (!hasValues(checkList)); // true if there were no errors, false if there were errors.
-    } // function validate()
-
-    async function submitData(e) {
-        e.preventDefault();
-
-        if (!(await validate())) {
-            toast.error('Some errors occurred. Please check your input, and try again!', toastifyTheme);
-            return;
-        } // if (!validate())
-
-        setLoadingMessage('Updating your account information. Please wait...');
-
         // userDoc = {
         //        personalDetails: {
+        //            displayName: 'JackStober',
         //            firstName: 'Jack',
         //            surname: 'Stober',
         //            dateOfBirth: 1984/01/18,
@@ -645,10 +528,233 @@ function AccountInfo() {
         //        },
         //        flagged: false
         // }
+        const data = {};
+        try {
+            if (personalDetails) {
+                const { displayName, firstName, surname, dateOfBirth, mobileNo, address } = personalDetails;
+                data.personalInfo = {
+                    displayName, firstName, surname, dateOfBirth                  
+                };
+                const { provincialCode, municipalityCode, mainPlaceCode, subPlaceCode, ...contactDetails } = address;
+                data.contactInfo = {
+                    ...init.contactInfo, mobileNo, ...contactDetails
+                };
+                data.gisCodes = {
+                    provincialCode, municipalityCode, mainPlaceCode, subPlaceCode
+                }
+                data.personalInfo.dateOfBirth = timeStampYyyyMmDd(new Date(dateOfBirth.toString()));
+                setPersonalInfo(data.personalInfo);
+                setContactInfo(data.contactInfo);
+                setGisCodes(data.gisCodes);
+                setUpdateMode(true); // Indicate that the form has been populated with data, and updates can be done by user.
+                                    // Meaning the user can selectively update/edit the fields.
+            } // if (personalDetails)
+            else {
+                setUpdateMode(false); // Meaning this is a new account info entry.
+            } // else
+        } // try
+        catch (error) {
+            console.log(error);
+            toast.error('Some error occurred here. Please try again.', toastifyTheme);
+            return false;
+        } // catch (error)
+        finally {            
+            setLoadingMessage(null);
+        } // finally
+
+        try {
+            if (hasValues(data)) {
+                // For the dropdowns
+                // 1.1. Provinces already loaded.
+                setProvincesLoaded(false);
+                let tempProvinces = provinces;
+                if (tempProvinces.length === 0) { // Provinces not loaded.
+                    tempProvinces = await getAllProvinces();
+                    setProvinces(tempProvinces);
+                }
+                const selProvince = tempProvinces.find(prov=>{
+                    return prov.code === data.gisCodes.provincialCode;
+                });
+                if (selProvince) {
+                    setSelectedProvince(selProvince); // 1.2. Default selected province.
+                } // if (seldProvince !== undefined) {
+
+                setMunicipalitiesLoaded(false);
+                // 2.1. Municipalities.
+                if (data.gisCodes.provincialCode !== '' && data.gisCodes.municipalityCode !== '' 
+                    && data.gisCodes.mainPlaceCode !== '' && data.gisCodes.subPlaceCode !== '') {
+                    const selProvince = provinces.find(prov=> (prov.code === data.gisCodes.provincialCode));
+                    if (selProvince)
+                        setSelectedProvince(selProvince);
+
+                    const tempMunicipalities = await getMunicipalitiesPerProvince(data.gisCodes.provincialCode);
+                    if (tempMunicipalities) {
+                        setMunicipalities(tempMunicipalities);
+                    
+                        // 2.2. Set the default selected municipality code in the dropdown.
+                        const selMunicipality = tempMunicipalities.find(municipality=> {
+                            return municipality.code === data.gisCodes.municipalityCode;
+                        });
+                        if (selMunicipality)
+                            setSelectedMunicipality(selMunicipality);
+                    }
+                }
+
+                // Load the main places of the user address' municipality code
+                setMainPlacesLoaded(false);
+                // 3.1. Main places
+                const tempMainPlaces = await getMainPlacesPerMunicipality(data.gisCodes.provincialCode, data.gisCodes.municipalityCode);
+                if (tempMainPlaces) {
+                    setMainPlaces(tempMainPlaces);
+                            
+                    // 3.2. Set default selected main place.
+                    const selMainPlace = tempMainPlaces.find(mainPlace=> mainPlace.code === data.gisCodes.mainPlaceCode);
+                    if (selMainPlace)
+                        setSelectedMainPlace(selMainPlace);
+                }
+                setSubPlacesLoaded(false);
+                const tempSubPlaces = await getSubPlacesPerMainPlace(data.gisCodes.provincialCode, data.gisCodes.municipalityCode,
+                                                                     data.gisCodes.mainPlaceCode);
+                if (tempSubPlaces) {
+                    setSubPlaces(tempSubPlaces);
+                    const selSubPlace = tempSubPlaces.find(place=> place.code === data.gisCodes.subPlaceCode);
+                    if (selSubPlace)
+                        setSelectedSubPlace(selSubPlace);
+                }
+
+            } // if (hasValues(data)) {
+        } catch (error) {
+            console.log(error);
+            toast.error(error, toastifyTheme);
+        } finally {
+            setLoadingMessage(null); // Remnove the spinners and display the loaded data.
+            setProvincesLoaded(true);
+            setMunicipalitiesLoaded(true);
+            setMainPlacesLoaded(true);
+            setSubPlacesLoaded(true);
+        } // finally
+    } // async function retrieveAccountInfo()
         
-        const {displayName, firstName, surname, dateOfBirth, mobileNo,
-                    complexName, unitNo, streetNo, streetName,
-                    provincialCode, municipalityCode, mainPlaceCode, subPlaceCode} = formData;
+    function handleChange(e) {
+        const path = e.target.name.replace(/-/gi, '.');
+        const stateName = path.split('.')[0];
+        const subPath = path.substring(stateName.length + 1);
+        const value = e.target.value;
+        let obj;
+        switch(stateName) {
+            case 'personalInfo':
+                obj = { ...personalInfo };
+                set(obj, subPath, value);
+                setPersonalInfo(obj);
+                validatePersonalInfo(obj);
+                break;
+            case 'contactInfo':
+                obj = { ...contactInfo };
+                set(obj, subPath, value);
+                setContactInfo(obj);
+                validateContactInfo(obj);
+                break;
+            case 'gisCodes':
+                obj = { ...gisCodes };
+                set(obj, subPath, value);
+                setGisCodes(obj);
+                validateGisCodes(obj);
+                break;
+        } 
+    } // function handleChange(e)
+
+    function validatePersonalInfo(pPersInfo) {
+        const errorList = {};
+        if (isValidName(pPersInfo.displayName) === false)
+            errorList.displayName = 'Invalid display name!';
+        if (isValidName(pPersInfo.firstName) === false)
+            errorList.firstName = 'Please fill in a valid First Name!';
+        
+        if (isValidName(pPersInfo.surname) === false)
+            errorList.surname = 'Please fill in a valid Surname!';
+
+        // Date of birth must be 18 to 100 years old.
+        let currDateMilliSec = new Date().getTime();
+        let yearsToMilliSec = 365.25 * 24 * 60 * 60 * 1000;
+
+        let dateDiff = currDateMilliSec - new Date(pPersInfo.dateOfBirth).getTime(); // birth date in milliseconds.
+        let valid = dateDiff >= 18 * yearsToMilliSec
+                    && dateDiff <= 100 * yearsToMilliSec;
+        if (valid === false)
+            errorList.dateOfBirth = 'Must be 18 to 100 years old!';
+
+        setPersonalInfoErrors(errorList);
+        return (!hasValues(errorList));
+    }
+
+    function validateContactInfo(pContactInfo) {
+        const errorList = {};
+        console.log(pContactInfo);
+        if (pContactInfo.complexName !== '' && isValidShortDescription(pContactInfo.complexName) === false) 
+            errorList.complexName = 'Please fill in a valid Complex Name!';
+        
+        if (pContactInfo.unitNo !== '' && isValidStreetNo(pContactInfo.unitNo) === false)
+            errorList.unitNo = 'Please fill in a valid Unit No!';
+        
+        if (isValidStreetNo(pContactInfo.streetNo) === false)
+            errorList.streetNo = 'Please fill in a valid Street No!';
+        
+        if (pContactInfo.streetName !== '' && isValidShortDescription(pContactInfo.streetName) === false)
+            errorList.streetName = 'Please fill in a valid Street Name!';
+        
+        if (isValidPhoneNum(pContactInfo.mobileNo) === false)
+            errorList.mobileNo = 'Please fill in a valid Mobile Number!';
+        
+        setContactInfoErrors(errorList);
+        return (!hasValues(errorList));
+    }
+
+    async function validateGisCodes(pGisCodes) {
+        const errorList = {};
+        if (!provinces.some(province=> (pGisCodes.provincialCode === province.code)))
+            errorList.provincialCode = 'Please choose a valid province!';
+        
+        if (!municipalities.some(municipality=> (pGisCodes.municipalityCode === municipality.code)))
+            errorList.municipalityCode = 'Please choose a valid municipality!';
+        
+        if (!mainPlaces.some(mainPlace=> (pGisCodes.mainPlaceCode === mainPlace.code)))
+            errorList.mainPlaceCode = 'Please choose a valid main place!';
+        
+        if (!subPlaces.some(subPlace=> (pGisCodes.subPlaceCode === subPlace.code)))
+            errorList.subPlaceCode = 'Please choose a valid sub-place !';        
+
+        setGisCodeErrors(errorList);
+        return (!hasValues(errorList)); // true if there were no errors, false if there were errors.
+    } // function validateGisCodes(pGisCodes)
+
+    function validate() {
+        const results = {
+            personalInfo: validatePersonalInfo(personalInfo),
+            contactInfo: validateContactInfo(contactInfo),
+            gisCodes: validateGisCodes(gisCodes)
+        };
+        let isValid = true;
+        for (const key in results) {
+            isValid = isValid && results[key];
+        }
+        return isValid;
+    }
+
+    async function submitData(e) {
+        e.preventDefault();
+
+        if (!validate()) {
+            toast.error('Some errors occurred. Please check your input, and try again!', toastifyTheme);
+            return;
+        } // if (!(awaitvalidate()))
+
+        setLoadingMessage('Updating your account information. Please wait...');
+        
+        const { displayName, firstName, surname, dateOfBirth, mobileNo,
+                complexName, unitNo, streetNo, streetName,
+                provincialCode, municipalityCode, mainPlaceCode, subPlaceCode} = {
+                    ...personalInfo, ...contactInfo, ...gisCodes
+                };
         const email = auth.currentUser.email;
         
         let data = {
@@ -661,7 +767,10 @@ function AccountInfo() {
                 mobileNo,
                 email,
                 address: {
+                    complexName,
+                    unitNo,
                     streetNo,
+                    streetName,
                     provincialCode,
                     municipalityCode,
                     mainPlaceCode,
@@ -676,60 +785,39 @@ function AccountInfo() {
             data.personalDetails.address.complexName = complexName;
 
         // Else if updated address information has no complex name:
-        else if (editableFields.complexName !== undefined 
-                        && editableFields.complexName !== '') // Previously there was a complex name, and was removed in the address update.
+        else if (backupStore.contactInfo?.complexName !== undefined 
+                && backupStore.contactInfo.complexName !== '') // Previously there was a complex name, and was removed in the address update.
             data.personalDetails.address.complexName = deleteField(); // Instruct Firestore to remove this field during update.
 
         if (unitNo !== '')
             data.personalDetails.address.unitNo = unitNo;
-        else if (editableFields.unitNo !== undefined
-                        && editableFields.unitNo !== '') // Previously there was a unit no., and was removed in the update
+        else if (backupStore.contactInfo?.unitNo !== undefined
+                    && backupStore.contactInfo.unitNo !== '') // Previously there was a unit no., and was removed in the update
             data.personalDetails.address.unitNo = deleteField(); // Instruct Firestore to remove this field during the update.
 
         if (streetName !== '')
             data.personalDetails.address.streetName = streetName;
-        else if (editableFields.streetName !== undefined && editableFields.streetName !== '')
+        else if (backupStore.contactInfo?.streetName !== undefined && backupStore.contactInfo.streetName !== '')
             data.personalDetails.streetName = deleteField();
         
-        let errorFound = false;
-        console.log(getSlice('authCurrentUser.uid'));
         const docRef = doc(db, '/users', getSlice('authCurrentUser.uid'));
         await setDoc(docRef, data, {merge: true})
               .then(result=> {
                     dispatch(ActionFunctions.authSetPersonalDetails({
                         ...data.personalDetails, dateOfBirth: new Date(dateOfBirth)
                     }));
-                    setEditableFields({});
+                    backupStore.clearAll(); // Clear the backup store as the data has been successfully updated.
                     setUpdateMode(true);                                               
                     setLoadingMessage(null);
+                    toast.success('Account Personal Details updated!', toastifyTheme);
                 })
               .catch(error=> {                           
                     setLoadingMessage(null);
                     toast.error('An error occurred. Please try again or contact Support.', toastifyTheme);
-                    errorFound = true;
                 });
-
-        setProvincesKey(provincesKey + keyStep);
-        setMunicipalitiesKey(municipalitiesKey + keyStep);
-        setMainPlacesKey(mainPlacesKey + keyStep);
-        setSubPlacesKey(subPlacesKey + keyStep);         
-
-        if (errorFound === false)
-            toast.success('Account Personal Details updated!', toastifyTheme);
     } // async function submitData(e)
 
-    function revert() {
-        // Enable the user to cancel any edits that were done to the form prior to submitting an update.
-        const data = deepClone({...formData});
-        for (const key in editableFields) {
-            loDash.set(data, key, editableFields[key]);
-        } // for (const key in editableFields)
-        setFormData(data);
-        setEditableFields({});
-    }
-
     useEffect(() => {   
-        console.log({getSlice: getSlice()});
         (async ()=> {
             if (!getSlice('authCurrentUser'))
                 return;
@@ -739,24 +827,9 @@ function AccountInfo() {
 
             firstRender.current = false;
             try {
-                let provinces = [];
                 setProvincesLoaded(false);
-
-                if (!collectionExists(VarNames.PROVINCES)) {
-                    provinces = await getAllProvinces();
-                    provinces = provinces.map(province=> ({...province}));
-                    const sortFields = ['name asc'];
-                    addCollection(VarNames.PROVINCES, provinces, 1, false, ...sortFields); // 1 - only item can be selected.
-
-                    /* Municipalities initialised as empty. To be re-loaded per selected province, when user selects the province */
-                    addCollection(VarNames.MUNICIPALITIES, [], 1, false, ...sortFields);
-
-                    /* Main places initialised as empty. To be re-loaded per selected municipality. */
-                    addCollection(VarNames.MAIN_PLACES, [], 1, false, ...sortFields);
-
-                    /* Sub-places initialised as empty. To be re-loaded per selected main place. */
-                    addCollection(VarNames.SUB_PLACES, [], 1, false, ...sortFields);
-                }
+                setProvinces(await getAllProvinces());
+                provinces = provinces.map(province=> ({...province}));                
             } catch(error) {
                 toast.error(error, toastifyTheme);
             } finally {
@@ -767,154 +840,192 @@ function AccountInfo() {
         retrieveAccountInfo();
     }, [getSlice('authCurrentUser')]); // useEffect()
 
+
+
     if (loadingMessage !== null)
         return (
             <Loader message={loadingMessage}/>
         );
 
     return (
-            <div className='w3-container'>
-                <form onSubmit={submitData}> 
-                    <h1>Account Personal Details</h1>
-                    <div className='w3-padding-small'>
-                        <label htmlFor='displayName'>* Display Name</label>
-                        <input name='displayName' id='displayName' auto-complete='off' disabled={isNotEditable('displayName')} required={true} maxLength={50} minLength={2} aria-required={true} className='w3-input w3-input-theme-1' type='text'
-                               aria-label='Display Name' onChange={e=> handleChange(e)} value={formData.displayName} />
-                        {getEditIcon('displayName')}
-                        {showErrorIcon('displayName')}
-                    </div>
+        <div className='w3-container'>
+            <form onSubmit={submitData}>
+                <h1>Account Personal Details</h1>
+                <div className='w3-padding-small'>
+                    <label htmlFor='personalInfo-displayName'>* Display Name</label>
+                    <input name='personalInfo-displayName' id='personalInfo-displayName' auto-complete='off' disabled={isNotEditable('personalInfo.displayName')} required={true} maxLength={50} minLength={2} aria-required={true} className='w3-input w3-input-theme-1' type='text'
+                            aria-label='Display Name' onChange={e=> handleChange(e)} value={personalInfo.displayName} />
+                    {getEditComponent('personalInfo.displayName')}
+                    <FieldError error={personalInfoErrors?.displayName}/>
+                </div>
 
-                    <div className='w3-padding-small'>
-                        <label htmlFor='firstName'>* First Name</label>
-                        <input name='firstName' id='firstName'    auto-complete='off' disabled={isNotEditable('firstName')}    required={true} aria-required={true} maxLength={50} minLength={2} className='w3-input w3-input-theme-1' type='text'
-                               aria-label='First Name' onChange={e=> handleChange(e)} value={formData.firstName} />
-                        {getEditIcon('firstName')}
-                        {showErrorIcon('firstName')}
-                    </div>
-                    
-                    <div className='w3-padding-small'>
-                        <label htmlFor='surname'>* Surname</label>
-                        <input name='surname' id='surname'    auto-complete='off' disabled={isNotEditable('surname')} required={true} aria-required={true} maxLength={50} minLength={2} className='w3-input w3-input-theme-1' type='text'
-                               aria-label='Surname' onChange={e=> handleChange(e)} value={formData.surname} />
-                        {getEditIcon('surname')}
-                        {showErrorIcon('surname')}
-                    </div>
-                    
-                    <div className='w3-padding-small'>
-                        <label htmlFor='dateOfBirth'>* Date of Birth</label>
-                        <input name='dateOfBirth' id='dateOfBirth'    auto-complete='off' disabled={isNotEditable('dateOfBirth')}    required={true} aria-required={true} className='w3-input w3-input-theme-1' type='date' 
-                               aria-label='Date of Birth'    onChange={e=> handleChange(e)} value={formData.dateOfBirth} />
-                        {getEditIcon('dateOfBirth')}
-                        {showErrorIcon('dateOfBirth')}    
-                    </div>                                        
-
-                    <div className='w3-padding-small w3-padding-top-24'>
-                        <label htmlFor='mobileNo'>* Mobile No.</label>
-                        <input name='mobileNo' id='mobileNo'    auto-complete='off' disabled={isNotEditable('mobileNo')} required={true} aria-required={true} maxLength={15} className='w3-input w3-input-theme-1' type='tel' 
-                               aria-label='Mobile Number' onChange={e=> handleChange(e)} value={formData.mobileNo} />
-                        {getEditIcon('mobileNo')}
-                        {showErrorIcon('mobileNo')}
-                    </div>
-
-                    <div className='w3-padding-top-24'>
-                        <h4>Address</h4>    
-                        <div className='w3-padding-small'>
-                            <label htmlFor='complexName'>Buiding or Complex Name (Optional)</label>
-                            <input name='complexName' auto-complete='off' disabled={isNotEditable('complexName')} maxLength={50}    minLength={2} className='w3-input w3-input-theme-1' type='text' 
-                                   aria-label='Building or Complex Name (Optional)' onChange={e=> handleChange(e)} value={formData.complexName}    />
-                            {getEditIcon('complexName')}
-                            {showErrorIcon('complexName')}
-                        </div>
-
-                        <div className='w3-padding-small'>
-                            <label htmlFor='unitNo'>Unit No. (Optional)</label>
-                            <input name='unitNo' auto-complete='off' disabled={isNotEditable('unitNo')} maxLength={25} className='w3-input w3-input-theme-1' type='text' 
-                                   aria-label='Unit Number (Optional)' onChange={e=> handleChange(e)} value={formData.unitNo} />
-                            {getEditIcon('unitNo')}
-                            {showErrorIcon('unitNo')}
-                        </div>
-
-                        <div className='w3-padding-small'>
-                            <label htmlFor='streetNo'>* Street No.</label>
-                            <input name='streetNo' auto-complete='off' disabled={isNotEditable('streetNo')} required={true} aria-required={true} maxLength={10} autoComplete='off'
-                                   className='w3-input w3-input-theme-1' type='text' aria-label='Street Number'
-                                   onChange={e=> handleChange(e)} value={formData.streetNo} />
-                            {getEditIcon('streetNo')}
-                            {showErrorIcon('streetNo')}
-                        </div>
+                <div className='w3-padding-small'>
+                    <label htmlFor='personalInfo-firstName'>* First Name</label>
+                    <input name='personalInfo-firstName' id='personalInfo-firstName'    auto-complete='off' disabled={isNotEditable('personalInfo.firstName')} required={true} aria-required={true} maxLength={50} minLength={2} className='w3-input w3-input-theme-1' type='text'
+                            aria-label='First Name' onChange={e=> handleChange(e)} value={personalInfo.firstName} />
+                    {getEditComponent('personalInfo.firstName')}
+                    <FieldError error={personalInfoErrors?.firstName}/>
+                </div>
                 
-                        <div className='w3-padding-small'>
-                            <label htmlFor='streetName'>Street Name (Optional)</label>
-                            <input name='streetName' auto-complete='off' disabled={isNotEditable('streetName')} maxLength={50} minLength={2} 
-                                   className='w3-input w3-input-theme-1' type='text' aria-label='Street Name (Optional)' onChange={e=> handleChange(e)}
-                                   value={formData.streetName} />
-                            {getEditIcon('streetName')}
-                            {showErrorIcon('streetName')}
-                        </div>
-                        
-                        {provincesLoaded?
-                            <>
-                                <div className='w3-padding-small'>
-                                    <Dropdown2 key={provincesKey} label='* Province' isDisabled={isNotEditable('provincialCode')} keyName='name' valueName='code' 
-                                               collectionName={VarNames.PROVINCES} selectedValue={formData.provincialCode} onItemSelected={provinceSelected} />                         
-                                    {getEditIcon('provincialCode')}
-                                    {showErrorIcon('provincialCode')}
-                                </div>
-                            </>
-                            :
-                            <Loader message='Loading provinces ...' small={true}/>
-                        }
+                <div className='w3-padding-small'>
+                    <label htmlFor='personalInfo-surname'>* Surname</label>
+                    <input name='personalInfo-surname' id='personalInfo-surname'    auto-complete='off' disabled={isNotEditable('personalInfo.surname')} required={true} aria-required={true} maxLength={50} minLength={2} className='w3-input w3-input-theme-1' type='text'
+                            aria-label='Surname' onChange={e=> handleChange(e)} value={personalInfo.surname} />
+                    {getEditComponent('personalInfo.surname')}
+                    <FieldError error={personalInfoErrors?.surname}/>
+                </div>
+                
+                <div className='w3-padding-small'>
+                    <label htmlFor='personalInfo-dateOfBirth'>* Date of Birth</label>
+                    <input name='personalInfo-dateOfBirth' id='personalInfo-dateOfBirth' auto-complete='off' disabled={isNotEditable('personalInfo.dateOfBirth')} required={true} aria-required={true} className='w3-input w3-input-theme-1' type='date' 
+                            aria-label='Date of Birth'    onChange={e=> handleChange(e)} value={personalInfo.dateOfBirth} />
+                    {getEditComponent('personalInfo.dateOfBirth')}
+                    <FieldError error={personalInfoErrors?.dateOfBirth}/>
+                </div>                                        
 
-                        {municipalitiesLoaded?
-                            <div className='w3-padding-small'>
-                                <Dropdown2 key={municipalitiesKey} label='* Municipality' isDisabled={isNotEditable('municipalityCode')} keyName='name' valueName='code' 
-                                           collectionName={VarNames.MUNICIPALITIES} selectedValue={formData.municipalityCode} onItemSelected={municipalitySelected} />                         
-                                {getEditIcon('municipalityCode')}
-                                {showErrorIcon('municipalityCode')}
-                            </div>
-                            :
-                            <Loader message='Loading municipalities ...' small={true} />
-                        }
-                        
-                        {mainPlacesLoaded?                            
-                            <div className='w3-padding-small'>
-                                <Dropdown2 key={mainPlacesKey} label='* Main Place' isDisabled={isNotEditable('mainPlaceCode')} keyName='name' valueName='code' 
-                                           collectionName={VarNames.MAIN_PLACES} selectedValue={formData.mainPlaceCode} onItemSelected={mainPlaceSelected} />                         
-                                {getEditIcon('mainPlaceCode')}
-                                {showErrorIcon('mainPlaceCode')}
-                            </div>
-                            :
-                            <Loader message='Loading main places ...' small={true}/>
-                        }
+                <div className='w3-padding-small w3-padding-top-24'>
+                    <label htmlFor='contactInfo-mobileNo'>* Mobile No.</label>
+                    <input name='contactInfo-mobileNo' id='contactInfo-mobileNo'    auto-complete='off' disabled={isNotEditable('contactInfo.mobileNo')} required={true} aria-required={true} maxLength={15} className='w3-input w3-input-theme-1' type='tel' 
+                            aria-label='Mobile Number' onChange={e=> handleChange(e)} value={contactInfo.mobileNo} />
+                    {getEditComponent('contactInfo.mobileNo')}
+                    <FieldError error={contactInfoErrors?.mobileNo}/>
+                </div>
 
-                        {subPlacesLoaded?
-                            <div className='w3-padding-small'>
-                                <Dropdown2 key={subPlacesKey} label='* Sub Place' isDisabled={isNotEditable('subPlaceCode')} keyName='name' valueName='code' 
-                                           collectionName={VarNames.SUB_PLACES} selectedValue={formData.subPlaceCode} onItemSelected={subPlaceSelected} />                         
-                                {getEditIcon('subPlaceCode')}
-                                {showErrorIcon('subPlaceCode')}
-                            </div>
-                            :
-                            <Loader message='Loading sub-places ...' small={true} />
-                        }
+                <div className='w3-padding-top-24'>
+                    <h4>Address</h4>    
+                    <div className='w3-padding-small'>
+                        <label htmlFor='contactInfo-complexName'>Buiding or Complex Name (Optional)</label>
+                        <input name='contactInfo-complexName' id='contactInfo-complexName' auto-complete='off' disabled={isNotEditable('contactInfo.complexName')} maxLength={50}    minLength={2} className='w3-input w3-input-theme-1' type='text' 
+                                aria-label='Building or Complex Name (Optional)' onChange={e=> handleChange(e)} value={contactInfo.complexName}    />
+                        {getEditComponent('contactInfo.complexName')}
+                        <FieldError error={contactInfoErrors?.complexName}/>
                     </div>
-                                                            
-                    <ToastContainer/>
+
+                    <div className='w3-padding-small'>
+                        <label htmlFor='contactInfo-unitNo'>Unit No. (Optional)</label>
+                        <input name='contactInfo-unitNo' id='contactInfo-unitNo' auto-complete='off' disabled={isNotEditable('contactInfo.unitNo')} maxLength={25} className='w3-input w3-input-theme-1' type='text' 
+                                aria-label='Unit Number (Optional)' onChange={e=> handleChange(e)} value={contactInfo.unitNo} />
+                        {getEditComponent('contactInfo.unitNo')}
+                        <FieldError error={contactInfoErrors?.unitNo}/>
+                    </div>
+
+                    <div className='w3-padding-small'>
+                        <label htmlFor='contactInfo-streetNo'>* Street No.</label>
+                        <input name='contactInfo-streetNo' id='contactInfo-streetNo' auto-complete='off' disabled={isNotEditable('contactInfo.streetNo')} required={true} aria-required={true} maxLength={10} autoComplete='off'
+                                className='w3-input w3-input-theme-1' type='text' aria-label='Street Number'
+                                onChange={e=> handleChange(e)} value={contactInfo.streetNo} />
+                        {getEditComponent('contactInfo.streetNo')}
+                        <FieldError error={contactInfoErrors?.streetNo}/>
+                    </div>
+            
+                    <div className='w3-padding-small'>
+                        <label htmlFor='contactInfo-streetName'>Street Name (Optional)</label>
+                        <input name='contactInfo-streetName' id='contactInfo-streetName' auto-complete='off' disabled={isNotEditable('contactInfo.streetName')} maxLength={50} minLength={2} 
+                                className='w3-input w3-input-theme-1' type='text' aria-label='Street Name (Optional)' onChange={e=> handleChange(e)}
+                                value={contactInfo.streetName} />
+                        {getEditComponent('contactInfo.streetName')}
+                        <FieldError error={contactInfoErrors?.streetName}/>
+                    </div>
                     
-                    {smsAuthEnabled && updateMode && 
-                        <EnrolUserForSMSAuth phoneNumber={formData.mobileNo} displayName={formData.displayName}/>
+                    {provincesLoaded?
+                        <div className='w3-padding-small'>
+                            <label htmlFor='gisCodes-province'>* Province</label><br/>
+                            <DropdownObj
+                                name='gisCodes-province' id='gisCodes-province' label='Province'
+                                isDisabled={isNotEditable('gisCodes.provincialCode')}
+                                displayName='name' valueName='code'
+                                sortFields={sortFields}
+                                data={provinces}
+                                selected={selectedProvince}
+                                selReset={isNotEditable('gisCodes.provincialCode')}
+                                onItemSelected={provinceSelected}
+                                dropdownStyle={{backgroundColor: '#a6b9a0', color: '#000'}}
+                            />
+                            {getEditComponent('gisCodes.provincialCode')}
+                            <FieldError error={gisCodeErrors?.provincialCode}/>
+                        </div>
+                        :
+                        <Loader message='Loading provinces ...' small={true}/>
                     }
-                                        
-                    <div className='w3-padding'>
-                        <button className='w3-btn w3-margin-small w3-theme-d5 w3-round' title='Save' disabled={disableButton()} type='submit'>Save</button>
-                    </div>
-                                        
-                    <div className='w3-padding'>
-                        <button className='w3-btn w3-margin-small w3-theme-d5 w3-round' title='Cancel' disabled={disableButton()} 
-                                        onClick={e=> revert()} type='button'>Cancel</button>
-                    </div>
-                </form>
-            </div>
+
+                    {municipalitiesLoaded?
+                        <div className='w3-padding-small'>
+                            <label htmlFor={`${componentUid}-municipality`}>* Municipality</label><br/>
+                            <DropdownObj 
+                                name='municipality' id={`${componentUid}-municipality`} label='Municipality' 
+                                isDisabled={isNotEditable('gisCodes.municipalityCode')}
+                                displayName='name' valueName='code' 
+                                sortFields={sortFields}
+                                data={municipalities}
+                                selected={selectedMunicipality}
+                                selReset={isNotEditable('gisCodes.municipalityCode')}
+                                onItemSelected={municipalitySelected}
+                                dropdownStyle={{backgroundColor: '#a6b9a0', color: '#000'}}
+                            />
+                            {getEditComponent('gisCodes.municipalityCode')}
+                            <FieldError error={gisCodeErrors?.municipalityCode}/>
+                        </div>
+                        :
+                        <Loader message='Loading municipalities ...' small={true} />
+                    }
+                    
+                    {mainPlacesLoaded?                            
+                        <div className='w3-padding-small'>
+                            <label htmlFor={`${componentUid}-mainPlace`}>* Main Place</label><br/>
+                            <DropdownObj name='mainPlace' id={`${componentUid}-mainPlace`} label='* Main Place'
+                                isDisabled={isNotEditable('gisCodes.mainPlaceCode')}
+                                displayName='name' valueName='code'
+                                sortFields={sortFields}
+                                data={mainPlaces}
+                                selected={selectedMainPlace}
+                                selReset={isNotEditable('gisCodes.mainPlaceCode')}
+                                onItemSelected={mainPlaceSelected}
+                                dropdownStyle={{backgroundColor: '#a6b9a0', color: '#000'}}
+                            />
+                            {getEditComponent('gisCodes.mainPlaceCode')}
+                            <FieldError error={gisCodeErrors?.mainPlaceCode}/>
+                        </div>
+                        :
+                        <Loader message='Loading main places ...' small={true}/>
+                    }
+
+                    {subPlacesLoaded?
+                        <div className='w3-padding-small'>
+                            <label htmlFor={`${componentUid}-subPlace`}>* Sub Place</label><br/>
+                            <DropdownObj id={`${componentUid}-subPlace`} name='subPlace' label='* Sub Place'
+                                isDisabled={isNotEditable('gisCodes.subPlaceCode')}
+                                displayName='name' valueName='code' 
+                                sortFields={sortFields}
+                                data={subPlaces}
+                                selected={selectedSubPlace}
+                                selReset={isNotEditable('gisCodes.subPlaceCode')}
+                                onItemSelected={subPlaceSelected}
+                                dropdownStyle={{backgroundColor: '#a6b9a0', color: '#000'}}
+                            />
+                            {getEditComponent('gisCodes.subPlaceCode')}
+                            <FieldError error={gisCodeErrors?.subPlaceCode}/>
+                        </div>
+                        :
+                        <Loader message='Loading sub-places ...' small={true} />
+                    }
+                </div>
+                                                        
+                <ToastContainer/>
+                
+                {smsAuthEnabled && updateMode && 
+                    <EnrolUserForSMSAuth phoneNumber={contactInfo.mobileNo} displayName={personalInfo.displayName}/>
+                }
+                                    
+                <div className='w3-padding'>
+                    <button className='w3-btn w3-margin-small w3-theme-d5 w3-round' title='Save' disabled={disableButton()} type='submit'>Save</button>
+                </div>
+                                    
+                <div className='w3-padding'>
+                    <button className='w3-btn w3-margin-small w3-theme-d5 w3-round' title='Cancel' disabled={disableButton()} 
+                                    onClick={e=> revertAll()} type='button'>Cancel</button>
+                </div>
+            </form>
+        </div>
     );
 }
 

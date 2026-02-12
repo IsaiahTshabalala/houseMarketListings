@@ -3,13 +3,14 @@
  * Description:
  * Firestore app configuration.
  * 
- * Date         Dev  Version   Description
- * 2023/07/26   ITA  1.00      Genesis.
- * 2024/06/20   ITA  1.01      Added a new .env variable named location. When set to 'local',
- *                             the web app will connect local emulators, which must be set up on the local desktop.
- *                             Otherwise the application will connect to the Firebase instance.
- *                             Added a function to determining if a logged in user has a moderator role.
- * 2024/07/20   ITA  1.02      Added measurement Id as one of the firebaseConfig fields.
+ * Start Date   End Date    Dev  Version  Description
+ * 2023/07/26               ITA  1.00     Genesis.
+ * 2024/06/20               ITA  1.01     Added a new .env variable named location. When set to 'local',
+ *                                        the web app will connect local emulators, which must be set up on the local desktop.
+ *                                        Otherwise the application will connect to the Firebase instance.
+ *                                        Added a function to determining if a logged in user has a moderator role.
+ * 2024/07/20               ITA  1.02     Added measurement Id as one of the firebaseConfig fields.
+ * 2026/02/12   2026/02/12  ITA  1.03     Improved the authentication syntax in isSigned() function.
  */
 // Import the functions you need from the SDKs you need
 import { initializeApp } from "firebase/app";
@@ -60,9 +61,8 @@ if (location.toLowerCase() === 'local') { // Setup options to use Firebase local
 await auth.setPersistence(browserSessionPersistence);
 
 function isSignedIn() {
-    return auth.currentUser !== null
-            && auth.currentUser.emailVerified === true
-            && auth.currentUser.isAnonymous === false;
+    return auth?.currentUser?.emailVerified === true
+            && auth?.currentUser?.isAnonymous === false;
 } // function isSignedIn()
 
 async function isModerator() {

@@ -2,15 +2,16 @@
  * File: ../src/components/Registered.js
  * Purpose: To restrict access to components (pages) to users that have completed registration.
  *          If the user has not completed registration, then provide the link to the registration page.
- * Date        Dev  Version  Description
- * 2024/04/05  ITA  1.00     Genesis.
- * 2024/09/18  ITA  1.01     Import context directly. Current User state moved to Global State.
- *                           Replace NavLinks with Links, since Links suffice for use as non-menu-item hyper-links.
+ * Start Date  End Date    Dev  Version  Description
+ * 2024/04/05              ITA  1.00     Genesis.
+ * 2024/09/18              ITA  1.01     Import context directly. Current User state moved to Global State.
+ *                                       Replace NavLinks with Links, since Links suffice for use as non-menu-item hyper-links.
+ * 2026/01/06  2026/01/06  ITA  1.03     Imported a specific object, element from prop-types, reducing build time.
  */
 import { useState } from 'react';
 import { Navigate, Link } from 'react-router-dom';
 import { isSignedIn } from '../config/appConfig';
-import PropTypes from 'prop-types';
+import { element } from 'prop-types';
 import { useGlobalStateContext } from '../hooks/GlobalStateProvider';
 import ErrorAlert from './ErrorAlert';
 
@@ -50,7 +51,7 @@ function Registered({children}) {
 }
 
 Registered.propTypes = {
-    children: PropTypes.element.isRequired
+    children: element.isRequired
 };
 
 export default Registered;

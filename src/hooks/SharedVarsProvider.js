@@ -3,13 +3,14 @@
  * Description:
  * A useContext hook that is to be used to enable sharing of variables between components.
  * 
- * Date        Dev    Version Description
- * 2024/02/29  ITA    1.00    Genesis
- * 2024/05/11  ITA    1.01    Add comment header.
- * 2024/09/18  ITA    1.02    Export ready-made context, eliminating the need for components using this context to call useContext.
+ * Start Date   End Date     Dev    Version Description
+ * 2024/02/29                ITA    1.00    Genesis
+ * 2024/05/11                ITA    1.01    Add comment header.
+ * 2024/09/18                ITA    1.02    Export ready-made context, eliminating the need for components using this context to call useContext.
+ * 2026/01/06   2026/01/06   ITA    1.03    Imported the specific object, element, from prop-types, reducing build time.
  */
 import { createContext, useContext, useRef } from "react";
-import PropTypes from 'prop-types';
+import { element } from 'prop-types';
 
 const sharedVarsContext = createContext();
 
@@ -58,7 +59,7 @@ export default function SharedVarsProvider({children}) {
 }
 
 SharedVarsProvider.propTypes = {
-    children: PropTypes.element.isRequired
+    children: element.isRequired
 };
 
 export function useSharedVarsContext() {

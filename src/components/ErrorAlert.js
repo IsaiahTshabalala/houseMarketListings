@@ -1,11 +1,12 @@
 /**
  * File: ./src/components/ErrorAlert.js
  * Description: Error Alert.
- * Date        Dev  Version Description
- * 2023/07/27  ITA  1.00    Genesis.
- * 2024/06/18  ITA  1.01    Add header comment.
+ * Start Date  End Date   Dev  Version Description
+ * 2023/07/27             ITA  1.00    Genesis.
+ * 2024/06/18             ITA  1.01    Add header comment.
+ * 2026/01/06  2026/01/06 ITA  1.02    Imported the specific import, string, from prop-types
  */
-import PropTypes from 'prop-types';
+import { string as stringPropType } from 'prop-types';
 import { FaTimesCircle } from 'react-icons/fa';
 import { useState } from 'react';
 
@@ -23,7 +24,7 @@ function Alert({message}) {
 }
 
 Alert.propTypes = {
-    message: PropTypes.string.isRequired
+    message: stringPropType.isRequired
 };
 
 export default Alert;

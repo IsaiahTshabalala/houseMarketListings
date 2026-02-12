@@ -3,12 +3,14 @@
  * Description:
  * UseContext hook to provide for global state. Currently, only info about the currently signed in user and the in app browsing history (locations) are catered for.
  * 
- * Date        Dev  Version  Description
- * 2024/09/18  ITA  1.00     Genesis.
+ * Start Date  End Date    Dev  Version  Description
+ * 2024/09/18              ITA  1.00     Genesis.
+ * 2026/01/08  2026/01/08  ITA  1.01     Imported the specific object, element, from prop-types, reducing build time.
+ *                                       Replaced the loDash get() function with an alternative from some-common-functions-js.
  */
 import { createContext, useReducer, useContext } from "react";
-import PropTypes from 'prop-types';
-import loDash from 'lodash';
+import { element } from 'prop-types';
+import { get } from 'some-common-functions-js';
 
 // Actions
 export const ActionFunctions = Object.freeze({
@@ -45,8 +47,8 @@ function GlobalStateProvider({children}) {
 
     /**Get any slice of the global state */
     function getSlice(path) {
-        return path? loDash.get(globalState, path) : globalState;
-    }
+        return path? get(globalState, path) : globalState;
+    };
     
     return (
         <globalStateContext.Provider
@@ -60,8 +62,8 @@ function GlobalStateProvider({children}) {
 } // function GlobalStateProvider({children})
 
 GlobalStateProvider.propTypes = {
-    children: PropTypes.node.isRequired
-};
+    children: element.isRequired
+}
 
 function globalReducer(state, action) {
     let stateUpdate = {...state}; // Default value. If the dev choose a wrong action type, the state should stay as is.

@@ -2,9 +2,13 @@
  * File: ./src/components/Loader.js
  * Description:
  * A loader component
+ * ================================================================================
+ * Patch History
+ * Start Date  End Date    Dev   Version  Description
+ * 2026/01/06  2026/01/06  ITA   1.02     Imported the specific objects from 'prop-types', reducing build time.
  */
 import '../loader.css';
-import PropTypes from 'prop-types';
+import { string as stringPropType, bool as boolPropType } from 'prop-types';
 
 function Loader({message = null, small = false}) {
   // A component to indicate that data is still being loaded.
@@ -17,8 +21,8 @@ function Loader({message = null, small = false}) {
 }
 
 Loader.propTypes = {
-  message: PropTypes.string,
-  small: PropTypes.bool
+  message: stringPropType,
+  small: boolPropType
 };
 
 export default Loader;

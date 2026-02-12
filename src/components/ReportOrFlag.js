@@ -3,10 +3,11 @@
  * Description: Component to enable user to report or flag (moderators only) a listing.
  * Placed inside the Listing component.
  * 
- * Date         Dev  Version  Description
- * 2024/05/23   ITA  1.00     Genesis.
- * 2024/07/09   ITA  1.01     REPORT THIS LISTING option to disappear if the listing has been reported.
- * 2024/09/18   ITA  1.01     Import context directly. Replace NavLinks with Links, since Links suffice for use as non-menu-item hyper-links.
+ * Start Date   End Date     Dev  Version  Description
+ * 2024/05/23                ITA  1.00     Genesis.
+ * 2024/07/09                ITA  1.01     REPORT THIS LISTING option to disappear if the listing has been reported.
+ * 2024/09/18                ITA  1.01     Import context directly. Replace NavLinks with Links, since Links suffice for use as non-menu-item hyper-links.
+ * 2025/12/27   2025/12/27   ITA  1.03     binarySearch() and compare() now imported from 'some-common-functions-js'.
  */
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
@@ -20,7 +21,7 @@ import { VarNames } from "../utilityFunctions/firestoreComms";
 import { useSharedVarsContext } from "../hooks/SharedVarsProvider";
 import { useGlobalStateContext } from "../hooks/GlobalStateProvider";
 import Loader from "./Loader";
-import { binarySearch, compare } from "../utilityFunctions/commonFunctions";
+import { binarySearch, compare } from "some-common-functions-js";
 
 function ReportOrFlag() {
     const {varExists, getVar, updateVar, addVar} = useSharedVarsContext();

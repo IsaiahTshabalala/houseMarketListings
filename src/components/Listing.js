@@ -2,18 +2,19 @@
 /**
  * File: '../src/components/Listing.js'
  * Purpose: Display the page of a listing that the user clicked in the Listings page.
- * Date         Dev   Version  Description
- * 2023/12/12   ITA   l.00     Genesis.
- * 2024/06/18   ITA   1.01     Improve the appearance of the links such that they appear like buttons, using w3.css classes.
- *                             Provide functionality for users to edit their listing. 
- *                             Provide functionality for users to report and flag (moderators only) a listing.
- * 2024/07/01   ITA   1.02     Rename field docId to listingId. 
- *                             UserId to be used in sorting the sellers in the sellers collection. Remove sortField.
- * 2024/08/07   ITA   1.03     Display the listing's map coordinates.
- * 2024/08/19   ITA   1.06     Remove seller information from view of other users. Alternative method to contact seller to be used in the future.
- * 2024/10/03   ITA   1.07     Import context directly. Variable names moved to VarNames object. User state moved to Global State.
- *                             Link suffices for non-menu-item links.
- * 2024/10/29   ITA   1.08     Provide the option to report/flag a listing only to users who do not own it.
+ * Start Date   End Date    Dev   Version  Description
+ * 2023/12/12               ITA   l.00     Genesis.
+ * 2024/06/18               ITA   1.01     Improve the appearance of the links such that they appear like buttons, using w3.css classes.
+ *                                         Provide functionality for users to edit their listing. 
+ *                                         Provide functionality for users to report and flag (moderators only) a listing.
+ * 2024/07/01               ITA   1.02     Rename field docId to listingId. 
+ *                                         UserId to be used in sorting the sellers in the sellers collection. Remove sortField.
+ * 2024/08/07               ITA   1.03     Display the listing's map coordinates.
+ * 2024/08/19               ITA   1.06     Remove seller information from view of other users. Alternative method to contact seller to be used in the future.
+ * 2024/10/03               ITA   1.07     Import context directly. Variable names moved to VarNames object. User state moved to Global State.
+ *                                         Link suffices for non-menu-item links.
+ * 2024/10/29               ITA   1.08     Provide the option to report/flag a listing only to users who do not own it.
+ * 2026/01/02   2026/01/02  ITA   1.09     toZarCurrencyFormat() and timeStampYyyyMmDd() now imported from 'some-common-functions-js' package.
  */
 import { useParams, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
@@ -21,7 +22,7 @@ import { FaBed, FaBath, FaRulerCombined, FaLandmark, FaCar, FaHome, FaUsers, FaT
 import { LiaFileInvoiceDollarSolid } from "react-icons/lia";
 import { FaTachometerAlt } from "react-icons/fa";
 import { GiHomeGarage } from 'react-icons/gi';
-import { toZarCurrencyFormat, timeStampYyyyMmDd } from '../utilityFunctions/commonFunctions';
+import { toZarCurrencyFormat, timeStampYyyyMmDd } from 'some-common-functions-js';
 import { VarNames } from '../utilityFunctions/firestoreComms';
 import { useSharedVarsContext } from '../hooks/SharedVarsProvider';
 import { useGlobalStateContext } from '../hooks/GlobalStateProvider';

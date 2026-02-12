@@ -3,12 +3,13 @@
  * Description:
  * Facilitate sending SMS authentication to the user.
  * 
- * Date        Dev   Version  Description
- * 2023/12/07  ITA   1.00     Genesis
- * 2024/06/10  ITA   1.01     Add header comment.
- *                            The Navlinks to appear as buttons.
- * 2024/09/11  ITA   1.01     Sign-in dispatch action removed, since it is automatically performed by the top-most, CurrentUserState component of this web application.
- *                            Context to be imported directly.
+ * Start Date  End Date     Dev   Version  Description
+ * 2023/12/07               ITA   1.00     Genesis
+ * 2024/06/10               ITA   1.01     Add header comment.
+ *                                         The Navlinks to appear as buttons.
+ * 2024/09/11               ITA   1.01     Sign-in dispatch action removed, since it is automatically performed by the top-most, CurrentUserState component of this web application.
+ *                                         Context to be imported directly.
+ * 2026/01/06  2026/01/06   ITA   1.01     Imported the specific object from prop-types, reducing build time.
  */
 import { getMultiFactorResolver, PhoneAuthProvider, 
          PhoneMultiFactorGenerator, RecaptchaVerifier } from 'firebase/auth';
@@ -18,7 +19,7 @@ import { FaTimesCircle } from 'react-icons/fa';
 import { toast, ToastContainer } from 'react-toastify';
 import toastifyTheme from './toastifyTheme.js';
 import { Link, useNavigate } from 'react-router-dom';
-import PropTypes from 'prop-types';
+import { object as objectPropType } from 'prop-types';
 
 function SignInSMSVerification({multiFactorError}) {    
     // resolver is the multi-factor resolver.
@@ -187,7 +188,7 @@ function SignInSMSVerification({multiFactorError}) {
 }
 
 SignInSMSVerification.propTypes = {
-    multiFactorError: PropTypes.object.isRequired
+    multiFactorError: objectPropType.isRequired
 };
 
 export default SignInSMSVerification;
