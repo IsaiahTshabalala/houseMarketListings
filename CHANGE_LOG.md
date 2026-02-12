@@ -8,3 +8,8 @@
 * Added the FieldError component, to improve the display of validation errors.
 * Made sure that the Listings component displays a loader while the listings are being fetched, instead of displaying 'No listings'.
 * Enabled direct querying of the Firestore database for Listings involving a regular price range, or an offer expiry date range and a discounted price range.
+  
+## 2025/02/12 to 2026/02/13 - ITA - Version 2.0.1
+* SearchListings.js: replaced single and multi selection dropdowns with radio buttons and checkboxes respectively, where the dropdown items had equal or less than 10 items.
+* SearchListings.js and firestoreComms: property types and number of bedrooms are no longer optional fields for conducting a search. Given that the queries of the searches now include a price range, the required additional composite indexes, each with a minimum of 4 fields, cannot be afforded at this stage.
+* SearchListings.js: added some small padding around error fields.

@@ -420,14 +420,22 @@ export function getListingsByPlacesQueryObject({
             where('transactionType', '==', transactionType)
         );
     }
+    else
+        throw new Error('Transaction type not specified');
+
     if (propertyTypes?.length)
         moreConstraints.push(
             where('propertyType', 'in', propertyTypes)
         );
+    else
+        throw new Error('Property types not specified');
+
     if (numberOfBedrooms?.length)
         moreConstraints.push(
             where('numBedrooms', 'in', numberOfBedrooms)
         );
+    else
+        throw new Error('Number of bedrooms not specified');
 
     
     // Ensure that the price range is supplied.
