@@ -15,6 +15,7 @@
  *                                         Link suffices for non-menu-item links.
  * 2024/10/29               ITA   1.08     Provide the option to report/flag a listing only to users who do not own it.
  * 2026/01/02   2026/01/02  ITA   1.09     toZarCurrencyFormat() and timeStampYyyyMmDd() now imported from 'some-common-functions-js' package.
+ * 2026/02/13   2026/02/13  ITA   1.10     Reduced the size of the 'Edit this listing' link.
  */
 import { useParams, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
@@ -153,9 +154,7 @@ function Listing() {
                     }
                     
                     {(location.pathname === `/my-profile/listings/${params.listingId}`) &&
-                        <h4>
-                            <Link className='w3-btn w3-round w3-theme-d5' onClick={goToEdit}><BsPencilFill/>Edit this listing</Link>
-                        </h4>
+                        <Link className='w3-btn w3-round w3-theme-d5' onClick={goToEdit}><BsPencilFill/>Edit this listing</Link>
                     }
 
                     <div className='w3-container w3-center w3-padding-small w3-content w3-display-container w3-margin-top'
@@ -256,9 +255,8 @@ function Listing() {
                                 <u>You created this listing.</u>
                             </h4>
                             {(location.pathname === `/my-profile/listings/${listing.listingId}`) &&
-                                <h4>
-                                    <Link className='w3-btn w3-round w3-theme-d5' onClick={goToEdit}><BsPencilFill/>Edit this listing</Link>
-                                </h4>
+                                
+                                <Link className='w3-btn w3-round w3-theme-d5' onClick={goToEdit}><BsPencilFill/>Edit this listing</Link>
                             }
                         </>
                         :

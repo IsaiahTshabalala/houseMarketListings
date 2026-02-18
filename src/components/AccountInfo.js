@@ -19,16 +19,20 @@
  *                                           Improved data validation and editing functionality in keeping up with split state data.
  *                                           Moved a number of utility functions to an external package (some-common-functions-js) for further refinement, and reusability.
  *                                           Replaced loDash object manipulation functions with newly created counterparts in some-common-functions-js.
+ * 2026/02/16  2026/02/18     ITA   1.05     Ensured that during submission of form data for updates, data only gets submitted to Firestore if there were changes.
+ *                                           Improved the robustness of handling optional fields and updates thereto, so that data always complies to Firestore rules during submission.
+ *                                           Ensured consistent pop up of toast messages when the toast is called, by placing the <ToastContainer> separate from the form and the loader.
+ *                                           Dispatch of data to Global State is now doable using a single dispatch function instead of 2.
 */
 import { useState, useEffect, useRef, useId } from 'react';
-import { useGlobalStateContext, ActionFunctions } from '../hooks/GlobalStateProvider.js';
+import { useGlobalStateContext } from '../hooks/GlobalStateProvider.js';
 import { doc, setDoc, Timestamp, deleteField } from 'firebase/firestore';
 import { db, isSignedIn, auth } from '../config/appConfig.js';
 import { getAllProvinces, getMunicipalitiesPerProvince, getMainPlacesPerMunicipality, getSubPlacesPerMainPlace } from '../utilityFunctions/firestoreComms.js';
+import toastifyTheme from './toastifyTheme.js';
 import { ToastContainer, toast } from 'react-toastify';
 import { isValidShortDescription, isValidStreetNo, hasValues } from '../utilityFunctions/commonFunctions.js';
-import { get, set, timeStampYyyyMmDd, isValidName, isValidPhoneNum, getPaths } from 'some-common-functions-js';
-import toastifyTheme from './toastifyTheme.js';
+import { get, set, unset, timeStampYyyyMmDd, isValidName, isValidPhoneNum } from 'some-common-functions-js';
 import '../w3.css';
 import EnrolUserForSMSAuth from './EnrolUserForSMSAuth.js';
 import Loader from './Loader.js';
@@ -103,7 +107,7 @@ function AccountInfo() {
     // Message to be displayed while data is loading. Null when complete.
     const [loadingMessage, setLoadingMessage] = useState(null);
 
-    const { getSlice, dispatch } = useGlobalStateContext();
+    const { getSlice, dispatchPersonalDetails } = useGlobalStateContext();
     const firstRender = useRef(true);
 
     const [provincesLoaded, setProvincesLoaded] = useState(true);
@@ -144,7 +148,7 @@ function AccountInfo() {
             const newGisCodes = { ...gisCodes, municipalityCode: selMunicipality.code };
             setGisCodes(newGisCodes);
             setSelectedMunicipality(selMunicipality); // Synchronise the selected municipality state with the one in the dropdown.
-            console.log(newGisCodes);
+            
             // Obtain the main places of the selected municipality.
             setMainPlacesLoaded(false);
             const tempMainPlaces = await getMainPlacesPerMunicipality(newGisCodes.provincialCode, newGisCodes.municipalityCode);
@@ -215,11 +219,15 @@ function AccountInfo() {
     /**Enable editing of fields or cancellation of edits. */
     function getEditComponent(path) {
         return (
-            <EditField 
-                backupCallback={()=> backup(path)}
-                revertCallback={()=> revert(path)}
-                displayEditIcon={isNotEditable(path)}
-            />
+            <>
+                {(updateMode) &&
+                    <EditField 
+                        backupCallback={()=> backup(path)}
+                        revertCallback={()=> revert(path)}
+                        displayEditIcon={isNotEditable(path)}
+                    />
+                }
+            </>
         );
     }
 
@@ -533,7 +541,7 @@ function AccountInfo() {
             if (personalDetails) {
                 const { displayName, firstName, surname, dateOfBirth, mobileNo, address } = personalDetails;
                 data.personalInfo = {
-                    displayName, firstName, surname, dateOfBirth                  
+                    displayName, firstName, surname, dateOfBirth             
                 };
                 const { provincialCode, municipalityCode, mainPlaceCode, subPlaceCode, ...contactDetails } = address;
                 data.contactInfo = {
@@ -541,7 +549,7 @@ function AccountInfo() {
                 };
                 data.gisCodes = {
                     provincialCode, municipalityCode, mainPlaceCode, subPlaceCode
-                }
+                };
                 data.personalInfo.dateOfBirth = timeStampYyyyMmDd(new Date(dateOfBirth.toString()));
                 setPersonalInfo(data.personalInfo);
                 setContactInfo(data.contactInfo);
@@ -689,17 +697,16 @@ function AccountInfo() {
 
     function validateContactInfo(pContactInfo) {
         const errorList = {};
-        console.log(pContactInfo);
-        if (pContactInfo.complexName !== '' && isValidShortDescription(pContactInfo.complexName) === false) 
+        if ((pContactInfo.complexName !== '') && isValidShortDescription(pContactInfo.complexName) === false) 
             errorList.complexName = 'Please fill in a valid Complex Name!';
         
-        if (pContactInfo.unitNo !== '' && isValidStreetNo(pContactInfo.unitNo) === false)
+        if ((pContactInfo.unitNo !== '') && isValidStreetNo(pContactInfo.unitNo) === false)
             errorList.unitNo = 'Please fill in a valid Unit No!';
         
         if (isValidStreetNo(pContactInfo.streetNo) === false)
             errorList.streetNo = 'Please fill in a valid Street No!';
         
-        if (pContactInfo.streetName !== '' && isValidShortDescription(pContactInfo.streetName) === false)
+        if ((pContactInfo.streetName !== '') && isValidShortDescription(pContactInfo.streetName) === false)
             errorList.streetName = 'Please fill in a valid Street Name!';
         
         if (isValidPhoneNum(pContactInfo.mobileNo) === false)
@@ -709,7 +716,7 @@ function AccountInfo() {
         return (!hasValues(errorList));
     }
 
-    async function validateGisCodes(pGisCodes) {
+    function validateGisCodes(pGisCodes) {
         const errorList = {};
         if (!provinces.some(province=> (pGisCodes.provincialCode === province.code)))
             errorList.provincialCode = 'Please choose a valid province!';
@@ -729,19 +736,55 @@ function AccountInfo() {
 
     function validate() {
         const results = {
-            personalInfo: validatePersonalInfo(personalInfo),
-            contactInfo: validateContactInfo(contactInfo),
-            gisCodes: validateGisCodes(gisCodes)
+            personalInfo: validatePersonalInfo(personalInfo), // personalInfo validation results.
+            contactInfo: validateContactInfo(contactInfo), // contactInfo validation results.
+            gisCodes: validateGisCodes(gisCodes) // gisCodes validation results.
         };
-        let isValid = true;
+
         for (const key in results) {
-            isValid = isValid && results[key];
+            if (results[key] === false) // Invalid data found.
+                return false;
         }
-        return isValid;
+        return true;
     }
 
     async function submitData(e) {
         e.preventDefault();
+
+        let backupValue;
+        /*============== If this a user update, track if any real changes occurred =============*/
+        let countChanges = 0;
+        const backupPaths = backupStore.getPaths();
+        for (const idx in backupPaths) {
+            const path = backupPaths[idx];
+            const splits = path.split('.');
+            const startsWith = splits[0]; // The backup paths start with the names of the state slices.
+            const subPath = path.substring(startsWith.length + 1);
+            backupValue = backupStore.get(path);
+            let stateValue;
+            switch (startsWith) {
+                case 'personalInfo':
+                    stateValue = get(personalInfo, subPath);
+                    break;
+                case 'contactInfo':
+                    stateValue = get(contactInfo, subPath);
+                    break;
+                case 'gisCodes':
+                    stateValue = get(gisCodes, subPath);
+                    break;
+                default:
+                    continue;
+            }
+            if (stateValue !== backupValue)
+                countChanges++;
+        }
+        if ((backupPaths.length > 0) && (countChanges === 0)) { // Do not  proceed if no real changes occurred.
+            setLoadingMessage(null);
+            backupStore.clearAll();
+            toast.success('No changes found.', toastifyTheme);
+            return;
+        }
+        /*=======================================================*/
 
         if (!validate()) {
             toast.error('Some errors occurred. Please check your input, and try again!', toastifyTheme);
@@ -757,7 +800,7 @@ function AccountInfo() {
                 };
         const email = auth.currentUser.email;
         
-        let data = {
+        let data = { // Structured according to the schema of the users collection in Firestore.
             personalDetails: {
                 displayName,
                 firstName,
@@ -780,41 +823,48 @@ function AccountInfo() {
             flagged: false
         } // const data
 
-        // Adding optional fields complexName and unitNo
-        if (complexName !== '')    // If updated address information has a complex name.
-            data.personalDetails.address.complexName = complexName;
+        // Handling the optional field complexName.
+        if (data.personalDetails.address.complexName === '') {
+            backupValue = backupStore.get('contactInfo.complexName');
+            if (backupValue) // There was a backupif (backupValue) // Previously there was a complex name, and has been removed in the address update.
+                data.personalDetails.address.complexName = deleteField(); // Instruct Firestore to remove this field during update.
+            else 
+                unset(data, 'personalDetails.address.complexName'); // Remove the complexName field. It was, and is still blank.
+        }
 
-        // Else if updated address information has no complex name:
-        else if (backupStore.contactInfo?.complexName !== undefined 
-                && backupStore.contactInfo.complexName !== '') // Previously there was a complex name, and was removed in the address update.
-            data.personalDetails.address.complexName = deleteField(); // Instruct Firestore to remove this field during update.
+        // Handling the optional field unitNo
+        if (data.personalDetails.address.unitNo === '') {
+            backupValue = backupStore.get('contactInfo.unitNo');
+            if (backupValue) // Previously there was a unit no., and has been removed in the update
+                data.personalDetails.address.unitNo = deleteField(); // Instruct Firestore to remove this field during the update.
+            else
+                unset(data, 'personalDetails.address.unitNo'); // Remove the unitNo. It was, and is still blank.
+        }
 
-        if (unitNo !== '')
-            data.personalDetails.address.unitNo = unitNo;
-        else if (backupStore.contactInfo?.unitNo !== undefined
-                    && backupStore.contactInfo.unitNo !== '') // Previously there was a unit no., and was removed in the update
-            data.personalDetails.address.unitNo = deleteField(); // Instruct Firestore to remove this field during the update.
-
-        if (streetName !== '')
-            data.personalDetails.address.streetName = streetName;
-        else if (backupStore.contactInfo?.streetName !== undefined && backupStore.contactInfo.streetName !== '')
-            data.personalDetails.streetName = deleteField();
+        // Handling the optional field streetName
+        if (data.personalDetails.address.streetName === '') {
+            backupValue = backupStore.get('contactInfo.streetName');
+            if (backupValue) // Previously there was a streetName, and has been removed in the update 
+                data.personalDetails.address.streetName = deleteField(); // Instruct Firestore to remove this field.
+            else
+                unset(data, 'personalDetails.address.streetName'); // Remove the streetName. It was, and is still blank.
+        }
         
         const docRef = doc(db, '/users', getSlice('authCurrentUser.uid'));
+        let anError;
         await setDoc(docRef, data, {merge: true})
               .then(result=> {
-                    dispatch(ActionFunctions.authSetPersonalDetails({
+                    dispatchPersonalDetails({
                         ...data.personalDetails, dateOfBirth: new Date(dateOfBirth)
-                    }));
+                    });
                     backupStore.clearAll(); // Clear the backup store as the data has been successfully updated.
-                    setUpdateMode(true);                                               
-                    setLoadingMessage(null);
+                    setUpdateMode(true);
                     toast.success('Account Personal Details updated!', toastifyTheme);
                 })
-              .catch(error=> {                           
-                    setLoadingMessage(null);
-                    toast.error('An error occurred. Please try again or contact Support.', toastifyTheme);
-                });
+              .catch(error=> {                    
+                    toast.error(anError, toastifyTheme);
+                })
+              .finally(()=> setLoadingMessage(null));
     } // async function submitData(e)
 
     useEffect(() => {   
@@ -841,191 +891,192 @@ function AccountInfo() {
     }, [getSlice('authCurrentUser')]); // useEffect()
 
 
-
-    if (loadingMessage !== null)
-        return (
-            <Loader message={loadingMessage}/>
-        );
-
     return (
-        <div className='w3-container'>
-            <form onSubmit={submitData}>
-                <h1>Account Personal Details</h1>
-                <div className='w3-padding-small'>
-                    <label htmlFor='personalInfo-displayName'>* Display Name</label>
-                    <input name='personalInfo-displayName' id='personalInfo-displayName' auto-complete='off' disabled={isNotEditable('personalInfo.displayName')} required={true} maxLength={50} minLength={2} aria-required={true} className='w3-input w3-input-theme-1' type='text'
-                            aria-label='Display Name' onChange={e=> handleChange(e)} value={personalInfo.displayName} />
-                    {getEditComponent('personalInfo.displayName')}
-                    <FieldError error={personalInfoErrors?.displayName}/>
-                </div>
+        <>
+            {(loadingMessage)?
+                <Loader message={loadingMessage}/>
+                :
+                <div className='w3-container'>
+                    <form onSubmit={submitData}>           
+                        <h1>Account Personal Details</h1>
+                        <div className='w3-padding-small'>
+                            <label htmlFor='personalInfo-displayName'>* Display Name</label>
+                            <input name='personalInfo-displayName' id='personalInfo-displayName' auto-complete='off' disabled={isNotEditable('personalInfo.displayName')} required={true} maxLength={50} minLength={2} aria-required={true} className='w3-input w3-input-theme-1' type='text'
+                                    aria-label='Display Name' onChange={e=> handleChange(e)} value={personalInfo.displayName} />
+                            {getEditComponent('personalInfo.displayName')}
+                            <FieldError error={personalInfoErrors?.displayName}/>
+                        </div>
 
-                <div className='w3-padding-small'>
-                    <label htmlFor='personalInfo-firstName'>* First Name</label>
-                    <input name='personalInfo-firstName' id='personalInfo-firstName'    auto-complete='off' disabled={isNotEditable('personalInfo.firstName')} required={true} aria-required={true} maxLength={50} minLength={2} className='w3-input w3-input-theme-1' type='text'
-                            aria-label='First Name' onChange={e=> handleChange(e)} value={personalInfo.firstName} />
-                    {getEditComponent('personalInfo.firstName')}
-                    <FieldError error={personalInfoErrors?.firstName}/>
-                </div>
-                
-                <div className='w3-padding-small'>
-                    <label htmlFor='personalInfo-surname'>* Surname</label>
-                    <input name='personalInfo-surname' id='personalInfo-surname'    auto-complete='off' disabled={isNotEditable('personalInfo.surname')} required={true} aria-required={true} maxLength={50} minLength={2} className='w3-input w3-input-theme-1' type='text'
-                            aria-label='Surname' onChange={e=> handleChange(e)} value={personalInfo.surname} />
-                    {getEditComponent('personalInfo.surname')}
-                    <FieldError error={personalInfoErrors?.surname}/>
-                </div>
-                
-                <div className='w3-padding-small'>
-                    <label htmlFor='personalInfo-dateOfBirth'>* Date of Birth</label>
-                    <input name='personalInfo-dateOfBirth' id='personalInfo-dateOfBirth' auto-complete='off' disabled={isNotEditable('personalInfo.dateOfBirth')} required={true} aria-required={true} className='w3-input w3-input-theme-1' type='date' 
-                            aria-label='Date of Birth'    onChange={e=> handleChange(e)} value={personalInfo.dateOfBirth} />
-                    {getEditComponent('personalInfo.dateOfBirth')}
-                    <FieldError error={personalInfoErrors?.dateOfBirth}/>
-                </div>                                        
+                        <div className='w3-padding-small'>
+                            <label htmlFor='personalInfo-firstName'>* First Name</label>
+                            <input name='personalInfo-firstName' id='personalInfo-firstName'    auto-complete='off' disabled={isNotEditable('personalInfo.firstName')} required={true} aria-required={true} maxLength={50} minLength={2} className='w3-input w3-input-theme-1' type='text'
+                                    aria-label='First Name' onChange={e=> handleChange(e)} value={personalInfo.firstName} />
+                            {getEditComponent('personalInfo.firstName')}
+                            <FieldError error={personalInfoErrors?.firstName}/>
+                        </div>
+                        
+                        <div className='w3-padding-small'>
+                            <label htmlFor='personalInfo-surname'>* Surname</label>
+                            <input name='personalInfo-surname' id='personalInfo-surname'    auto-complete='off' disabled={isNotEditable('personalInfo.surname')} required={true} aria-required={true} maxLength={50} minLength={2} className='w3-input w3-input-theme-1' type='text'
+                                    aria-label='Surname' onChange={e=> handleChange(e)} value={personalInfo.surname} />
+                            {getEditComponent('personalInfo.surname')}
+                            <FieldError error={personalInfoErrors?.surname}/>
+                        </div>
+                        
+                        <div className='w3-padding-small'>
+                            <label htmlFor='personalInfo-dateOfBirth'>* Date of Birth</label>
+                            <input name='personalInfo-dateOfBirth' id='personalInfo-dateOfBirth' auto-complete='off' disabled={isNotEditable('personalInfo.dateOfBirth')} required={true} aria-required={true} className='w3-input w3-input-theme-1' type='date' 
+                                    aria-label='Date of Birth'    onChange={e=> handleChange(e)} value={personalInfo.dateOfBirth} />
+                            {getEditComponent('personalInfo.dateOfBirth')}
+                            <FieldError error={personalInfoErrors?.dateOfBirth}/>
+                        </div>                                        
 
-                <div className='w3-padding-small w3-padding-top-24'>
-                    <label htmlFor='contactInfo-mobileNo'>* Mobile No.</label>
-                    <input name='contactInfo-mobileNo' id='contactInfo-mobileNo'    auto-complete='off' disabled={isNotEditable('contactInfo.mobileNo')} required={true} aria-required={true} maxLength={15} className='w3-input w3-input-theme-1' type='tel' 
-                            aria-label='Mobile Number' onChange={e=> handleChange(e)} value={contactInfo.mobileNo} />
-                    {getEditComponent('contactInfo.mobileNo')}
-                    <FieldError error={contactInfoErrors?.mobileNo}/>
-                </div>
+                        <div className='w3-padding-small w3-padding-top-24'>
+                            <label htmlFor='contactInfo-mobileNo'>* Mobile No.</label>
+                            <input name='contactInfo-mobileNo' id='contactInfo-mobileNo'    auto-complete='off' disabled={isNotEditable('contactInfo.mobileNo')} required={true} aria-required={true} maxLength={15} className='w3-input w3-input-theme-1' type='tel' 
+                                    aria-label='Mobile Number' onChange={e=> handleChange(e)} value={contactInfo.mobileNo} />
+                            {getEditComponent('contactInfo.mobileNo')}
+                            <FieldError error={contactInfoErrors?.mobileNo}/>
+                        </div>
 
-                <div className='w3-padding-top-24'>
-                    <h4>Address</h4>    
-                    <div className='w3-padding-small'>
-                        <label htmlFor='contactInfo-complexName'>Buiding or Complex Name (Optional)</label>
-                        <input name='contactInfo-complexName' id='contactInfo-complexName' auto-complete='off' disabled={isNotEditable('contactInfo.complexName')} maxLength={50}    minLength={2} className='w3-input w3-input-theme-1' type='text' 
-                                aria-label='Building or Complex Name (Optional)' onChange={e=> handleChange(e)} value={contactInfo.complexName}    />
-                        {getEditComponent('contactInfo.complexName')}
-                        <FieldError error={contactInfoErrors?.complexName}/>
-                    </div>
+                        <div className='w3-padding-top-24'>
+                            <h4>Address</h4>    
+                            <div className='w3-padding-small'>
+                                <label htmlFor='contactInfo-complexName'>Buiding or Complex Name (Optional)</label>
+                                <input name='contactInfo-complexName' id='contactInfo-complexName' auto-complete='off' disabled={isNotEditable('contactInfo.complexName')} maxLength={50}    minLength={2} className='w3-input w3-input-theme-1' type='text' 
+                                        aria-label='Building or Complex Name (Optional)' onChange={e=> handleChange(e)} value={contactInfo.complexName}    />
+                                {getEditComponent('contactInfo.complexName')}
+                                <FieldError error={contactInfoErrors?.complexName}/>
+                            </div>
 
-                    <div className='w3-padding-small'>
-                        <label htmlFor='contactInfo-unitNo'>Unit No. (Optional)</label>
-                        <input name='contactInfo-unitNo' id='contactInfo-unitNo' auto-complete='off' disabled={isNotEditable('contactInfo.unitNo')} maxLength={25} className='w3-input w3-input-theme-1' type='text' 
-                                aria-label='Unit Number (Optional)' onChange={e=> handleChange(e)} value={contactInfo.unitNo} />
-                        {getEditComponent('contactInfo.unitNo')}
-                        <FieldError error={contactInfoErrors?.unitNo}/>
-                    </div>
+                            <div className='w3-padding-small'>
+                                <label htmlFor='contactInfo-unitNo'>Unit No. (Optional)</label>
+                                <input name='contactInfo-unitNo' id='contactInfo-unitNo' auto-complete='off' disabled={isNotEditable('contactInfo.unitNo')} maxLength={25} className='w3-input w3-input-theme-1' type='text' 
+                                        aria-label='Unit Number (Optional)' onChange={e=> handleChange(e)} value={contactInfo.unitNo} />
+                                {getEditComponent('contactInfo.unitNo')}
+                                <FieldError error={contactInfoErrors?.unitNo}/>
+                            </div>
 
-                    <div className='w3-padding-small'>
-                        <label htmlFor='contactInfo-streetNo'>* Street No.</label>
-                        <input name='contactInfo-streetNo' id='contactInfo-streetNo' auto-complete='off' disabled={isNotEditable('contactInfo.streetNo')} required={true} aria-required={true} maxLength={10} autoComplete='off'
-                                className='w3-input w3-input-theme-1' type='text' aria-label='Street Number'
-                                onChange={e=> handleChange(e)} value={contactInfo.streetNo} />
-                        {getEditComponent('contactInfo.streetNo')}
-                        <FieldError error={contactInfoErrors?.streetNo}/>
-                    </div>
-            
-                    <div className='w3-padding-small'>
-                        <label htmlFor='contactInfo-streetName'>Street Name (Optional)</label>
-                        <input name='contactInfo-streetName' id='contactInfo-streetName' auto-complete='off' disabled={isNotEditable('contactInfo.streetName')} maxLength={50} minLength={2} 
-                                className='w3-input w3-input-theme-1' type='text' aria-label='Street Name (Optional)' onChange={e=> handleChange(e)}
-                                value={contactInfo.streetName} />
-                        {getEditComponent('contactInfo.streetName')}
-                        <FieldError error={contactInfoErrors?.streetName}/>
-                    </div>
+                            <div className='w3-padding-small'>
+                                <label htmlFor='contactInfo-streetNo'>* Street No.</label>
+                                <input name='contactInfo-streetNo' id='contactInfo-streetNo' auto-complete='off' disabled={isNotEditable('contactInfo.streetNo')} required={true} aria-required={true} maxLength={10} autoComplete='off'
+                                        className='w3-input w3-input-theme-1' type='text' aria-label='Street Number'
+                                        onChange={e=> handleChange(e)} value={contactInfo.streetNo} />
+                                {getEditComponent('contactInfo.streetNo')}
+                                <FieldError error={contactInfoErrors?.streetNo}/>
+                            </div>
                     
-                    {provincesLoaded?
-                        <div className='w3-padding-small'>
-                            <label htmlFor='gisCodes-province'>* Province</label><br/>
-                            <DropdownObj
-                                name='gisCodes-province' id='gisCodes-province' label='Province'
-                                isDisabled={isNotEditable('gisCodes.provincialCode')}
-                                displayName='name' valueName='code'
-                                sortFields={sortFields}
-                                data={provinces}
-                                selected={selectedProvince}
-                                selReset={isNotEditable('gisCodes.provincialCode')}
-                                onItemSelected={provinceSelected}
-                                dropdownStyle={{backgroundColor: '#a6b9a0', color: '#000'}}
-                            />
-                            {getEditComponent('gisCodes.provincialCode')}
-                            <FieldError error={gisCodeErrors?.provincialCode}/>
-                        </div>
-                        :
-                        <Loader message='Loading provinces ...' small={true}/>
-                    }
+                            <div className='w3-padding-small'>
+                                <label htmlFor='contactInfo-streetName'>Street Name (Optional)</label>
+                                <input name='contactInfo-streetName' id='contactInfo-streetName' auto-complete='off' disabled={isNotEditable('contactInfo.streetName')} maxLength={50} minLength={2} 
+                                        className='w3-input w3-input-theme-1' type='text' aria-label='Street Name (Optional)' onChange={e=> handleChange(e)}
+                                        value={contactInfo.streetName} />
+                                {getEditComponent('contactInfo.streetName')}
+                                <FieldError error={contactInfoErrors?.streetName}/>
+                            </div>
+                            
+                            {provincesLoaded?
+                                <div className='w3-padding-small'>
+                                    <label htmlFor='gisCodes-province'>* Province</label><br/>
+                                    <DropdownObj
+                                        name='gisCodes-province' id='gisCodes-province' label='Province'
+                                        isDisabled={isNotEditable('gisCodes.provincialCode')}
+                                        displayName='name' valueName='code'
+                                        sortFields={sortFields}
+                                        data={provinces}
+                                        selected={selectedProvince}
+                                        selReset={isNotEditable('gisCodes.provincialCode')}
+                                        onItemSelected={provinceSelected}
+                                        dropdownStyle={{backgroundColor: '#a6b9a0', color: '#000'}}
+                                    />
+                                    {getEditComponent('gisCodes.provincialCode')}
+                                    <FieldError error={gisCodeErrors?.provincialCode}/>
+                                </div>
+                                :
+                                <Loader message='Loading provinces ...' small={true}/>
+                            }
 
-                    {municipalitiesLoaded?
-                        <div className='w3-padding-small'>
-                            <label htmlFor={`${componentUid}-municipality`}>* Municipality</label><br/>
-                            <DropdownObj 
-                                name='municipality' id={`${componentUid}-municipality`} label='Municipality' 
-                                isDisabled={isNotEditable('gisCodes.municipalityCode')}
-                                displayName='name' valueName='code' 
-                                sortFields={sortFields}
-                                data={municipalities}
-                                selected={selectedMunicipality}
-                                selReset={isNotEditable('gisCodes.municipalityCode')}
-                                onItemSelected={municipalitySelected}
-                                dropdownStyle={{backgroundColor: '#a6b9a0', color: '#000'}}
-                            />
-                            {getEditComponent('gisCodes.municipalityCode')}
-                            <FieldError error={gisCodeErrors?.municipalityCode}/>
-                        </div>
-                        :
-                        <Loader message='Loading municipalities ...' small={true} />
-                    }
-                    
-                    {mainPlacesLoaded?                            
-                        <div className='w3-padding-small'>
-                            <label htmlFor={`${componentUid}-mainPlace`}>* Main Place</label><br/>
-                            <DropdownObj name='mainPlace' id={`${componentUid}-mainPlace`} label='* Main Place'
-                                isDisabled={isNotEditable('gisCodes.mainPlaceCode')}
-                                displayName='name' valueName='code'
-                                sortFields={sortFields}
-                                data={mainPlaces}
-                                selected={selectedMainPlace}
-                                selReset={isNotEditable('gisCodes.mainPlaceCode')}
-                                onItemSelected={mainPlaceSelected}
-                                dropdownStyle={{backgroundColor: '#a6b9a0', color: '#000'}}
-                            />
-                            {getEditComponent('gisCodes.mainPlaceCode')}
-                            <FieldError error={gisCodeErrors?.mainPlaceCode}/>
-                        </div>
-                        :
-                        <Loader message='Loading main places ...' small={true}/>
-                    }
+                            {municipalitiesLoaded?
+                                <div className='w3-padding-small'>
+                                    <label htmlFor={`${componentUid}-municipality`}>* Municipality</label><br/>
+                                    <DropdownObj 
+                                        name='municipality' id={`${componentUid}-municipality`} label='Municipality' 
+                                        isDisabled={isNotEditable('gisCodes.municipalityCode')}
+                                        displayName='name' valueName='code' 
+                                        sortFields={sortFields}
+                                        data={municipalities}
+                                        selected={selectedMunicipality}
+                                        selReset={isNotEditable('gisCodes.municipalityCode')}
+                                        onItemSelected={municipalitySelected}
+                                        dropdownStyle={{backgroundColor: '#a6b9a0', color: '#000'}}
+                                    />
+                                    {getEditComponent('gisCodes.municipalityCode')}
+                                    <FieldError error={gisCodeErrors?.municipalityCode}/>
+                                </div>
+                                :
+                                <Loader message='Loading municipalities ...' small={true} />
+                            }
+                            
+                            {mainPlacesLoaded?                            
+                                <div className='w3-padding-small'>
+                                    <label htmlFor={`${componentUid}-mainPlace`}>* Main Place</label><br/>
+                                    <DropdownObj name='mainPlace' id={`${componentUid}-mainPlace`} label='* Main Place'
+                                        isDisabled={isNotEditable('gisCodes.mainPlaceCode')}
+                                        displayName='name' valueName='code'
+                                        sortFields={sortFields}
+                                        data={mainPlaces}
+                                        selected={selectedMainPlace}
+                                        selReset={isNotEditable('gisCodes.mainPlaceCode')}
+                                        onItemSelected={mainPlaceSelected}
+                                        dropdownStyle={{backgroundColor: '#a6b9a0', color: '#000'}}
+                                    />
+                                    {getEditComponent('gisCodes.mainPlaceCode')}
+                                    <FieldError error={gisCodeErrors?.mainPlaceCode}/>
+                                </div>
+                                :
+                                <Loader message='Loading main places ...' small={true}/>
+                            }
 
-                    {subPlacesLoaded?
-                        <div className='w3-padding-small'>
-                            <label htmlFor={`${componentUid}-subPlace`}>* Sub Place</label><br/>
-                            <DropdownObj id={`${componentUid}-subPlace`} name='subPlace' label='* Sub Place'
-                                isDisabled={isNotEditable('gisCodes.subPlaceCode')}
-                                displayName='name' valueName='code' 
-                                sortFields={sortFields}
-                                data={subPlaces}
-                                selected={selectedSubPlace}
-                                selReset={isNotEditable('gisCodes.subPlaceCode')}
-                                onItemSelected={subPlaceSelected}
-                                dropdownStyle={{backgroundColor: '#a6b9a0', color: '#000'}}
-                            />
-                            {getEditComponent('gisCodes.subPlaceCode')}
-                            <FieldError error={gisCodeErrors?.subPlaceCode}/>
+                            {subPlacesLoaded?
+                                <div className='w3-padding-small'>
+                                    <label htmlFor={`${componentUid}-subPlace`}>* Sub Place</label><br/>
+                                    <DropdownObj id={`${componentUid}-subPlace`} name='subPlace' label='* Sub Place'
+                                        isDisabled={isNotEditable('gisCodes.subPlaceCode')}
+                                        displayName='name' valueName='code' 
+                                        sortFields={sortFields}
+                                        data={subPlaces}
+                                        selected={selectedSubPlace}
+                                        selReset={isNotEditable('gisCodes.subPlaceCode')}
+                                        onItemSelected={subPlaceSelected}
+                                        dropdownStyle={{backgroundColor: '#a6b9a0', color: '#000'}}
+                                    />
+                                    {getEditComponent('gisCodes.subPlaceCode')}
+                                    <FieldError error={gisCodeErrors?.subPlaceCode}/>
+                                </div>
+                                :
+                                <Loader message='Loading sub-places ...' small={true} />
+                            }
                         </div>
-                        :
-                        <Loader message='Loading sub-places ...' small={true} />
-                    }
+                                                
+                        {smsAuthEnabled && updateMode && 
+                            <EnrolUserForSMSAuth phoneNumber={contactInfo.mobileNo} displayName={personalInfo.displayName}/>
+                        }
+                                            
+                        <div className='w3-padding'>
+                            <button className='w3-btn w3-margin-small w3-theme-d5 w3-round' title='Save' disabled={disableButton()} type='submit'>Save</button>
+                        </div>
+                                            
+                        <div className='w3-padding'>
+                            <button className='w3-btn w3-margin-small w3-theme-d5 w3-round' title='Cancel' disabled={disableButton()} 
+                                            onClick={e=> revertAll()} type='button'>Cancel</button>
+                        </div>
+                    </form>
                 </div>
-                                                        
+            }
+            <>
                 <ToastContainer/>
-                
-                {smsAuthEnabled && updateMode && 
-                    <EnrolUserForSMSAuth phoneNumber={contactInfo.mobileNo} displayName={personalInfo.displayName}/>
-                }
-                                    
-                <div className='w3-padding'>
-                    <button className='w3-btn w3-margin-small w3-theme-d5 w3-round' title='Save' disabled={disableButton()} type='submit'>Save</button>
-                </div>
-                                    
-                <div className='w3-padding'>
-                    <button className='w3-btn w3-margin-small w3-theme-d5 w3-round' title='Cancel' disabled={disableButton()} 
-                                    onClick={e=> revertAll()} type='button'>Cancel</button>
-                </div>
-            </form>
-        </div>
+            </>
+        </>
     );
 }
 

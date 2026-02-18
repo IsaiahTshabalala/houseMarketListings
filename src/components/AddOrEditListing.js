@@ -20,6 +20,10 @@
  *                                         Improved data validation and editing functionality in keeping up with split state data.
  *                                         Moved a number of utility functions to an external package (some-common-functions-js) for further refinement, and reusability.
  *                                         Replaced loDash object manipulation functions with newly created counterparts in some-common-functions-js.
+ * 2026/02/16  2026/02/18    ITA  1.08     Prevent the submission of form data to Firestore if no changes occurred.
+ *                                         The <EditField> component edit/cancel functionality to be controlled from within this component.
+ *                                         Improved the robustness of map-coordinates validation by ensuring that map coordinates inputs are decimal numbers, thereby preventing the submission of integer coordinates to Firestore, which will be rejected.
+ *                                         Ensured the consistent pop-up of the toast messages when the toast is called, by placing the <ToastContainer> separate from the form and the loader.
  */
 import { doc, setDoc, Timestamp, deleteField } from 'firebase/firestore';
 import { db, auth } from '../config/appConfig.js';
@@ -483,7 +487,14 @@ function AddOrEditListing() {
     function getEditComponent(path) {
         path = path.replace(/-/g, '.');
         return (
-            <EditField backupCallback={()=> backup(path)} revertCallback={()=> revert(path)} />
+            <>
+                {(updateMode) &&
+                    <EditField backupCallback={()=> backup(path)}
+                        revertCallback={()=> revert(path)} 
+                        displayEditIcon={isNotEditable(path)}
+                    />
+                }
+            </>
         );
     }
 
@@ -874,11 +885,18 @@ function AddOrEditListing() {
 
     function validateMapCoordinates(pMapCoordinates) {
         const errorList = {};
-        if (mapCoordinates.latitude !== '' || mapCoordinates.longitude !== '') {
-            if (!isValidDecimalNumber(mapCoordinates.latitude))
-                errorList.latitude = 'Invalid latitude';
-    
-            if (!isValidDecimalNumber(mapCoordinates.longitude))
+        if (pMapCoordinates.latitude !== '' || pMapCoordinates.longitude !== '') {
+            pMapCoordinates.latitude += '';
+            pMapCoordinates.longitude += '';
+            if (!pMapCoordinates.latitude.includes('.'))
+                errorList.latitude = 'Must be a decimal number';
+
+            if (!isValidDecimalNumber(pMapCoordinates.latitude))
+                errorList.latitude = 'Invalid latitude';            
+
+            if (!pMapCoordinates.longitude.includes('.'))
+                errorList.longitude = 'Must be a decimal number';
+            if (!isValidDecimalNumber(pMapCoordinates.longitude))
                 errorList.longitude = 'Invalid longitude';
         } // if (mapCoordinates.latitude !== '' || mapCoordinates.longitude !== '') {
 
@@ -888,7 +906,6 @@ function AddOrEditListing() {
 
     function validateImages(attachedImages) {
         const errorList = {};
-        console.log("validateImages() called");
         // Attached images, together with existing images must not exceed the set limit.
         const numImagesForDeletion = currentImages.filter(image=> {
             return image.toDelete === true;
@@ -918,7 +935,6 @@ function AddOrEditListing() {
         } // for (const idx in attachedImages) {
 
         const errorsFound = hasValues(errorList);
-        console.log(errorList);
         if (errorsFound) {            
             const errors = [];
             Object.keys(errorList).forEach(key => errors.push(errorList[key]));
@@ -965,6 +981,53 @@ function AddOrEditListing() {
             toast.error('Could not submit your data. Please check your input and try again!', toastifyTheme);
             return;
         } // if (!(await validate(formData))) {
+
+        let backupValue;
+        /*============== If this a user update, track if any real changes occurred =============*/
+        let countChanges = 0;
+        const backupPaths = backupStore.getPaths();
+        for (const idx in backupPaths) {
+            const path = backupPaths[idx];
+            const splits = path.split('.');
+            const startsWith = splits[0]; // The backup paths start with the names of the state slices.
+            const subPath = path.substring(startsWith.length + 1);
+            backupValue = backupStore.get(path);
+            let stateValue;
+            switch (startsWith) {
+                case 'listingInfo':
+                    stateValue = get(listingInfo, subPath);
+                    break;
+                case 'specifications':
+                    stateValue = get(specifications, subPath);
+                    break;
+                case 'priceInfo':
+                    stateValue = get(priceInfo, subPath);
+                    break;
+                case 'rates':
+                    stateValue = get(rates, subPath);
+                    break;
+                case 'address':
+                    stateValue = get(address, subPath);
+                    break;
+                case 'mapCoordinates':
+                    stateValue = get(mapCoordinates, subPath);
+                    break;
+                case 'gisCodes':
+                    stateValue = get(gisCodes, subPath);
+                    break;
+                default:
+                    continue;
+            }
+            if (stateValue !== backupValue)
+                countChanges++;
+        }
+        if ((backupPaths.length > 0) && (countChanges === 0)) { // Do not  proceed if no real changes occurred.
+            setLoadingMessage(null);
+            backupStore.clearAll();
+            toast.success('No changes found.', toastifyTheme);
+            return;
+        }
+        /*=======================================================*/
         
         setLoadingMessage(updateMode? 'Updating your listing ...' : 'Creating a new listing ...');
         const data = deepClone({
@@ -1389,550 +1452,557 @@ function AddOrEditListing() {
         } // if (varExists(VarNames.CLICKED_LISTING) && varExists(VarNames.LISTINGS)) {
     } // function retrieveListingData() {
 
-    if (loadingMessage !== null)
-        return <Loader message={loadingMessage} />
-
     return (
-        <Registered>
-            <div className='w3-container'>
-                {listingUniqueId.current === null?
-                    <>
-                        <h1>Add New Listing</h1>
-                        <div className='w3-padding'>
-                            <NavLink className='w3-btn w3-round w3-theme-d5'  to={`/my-profile/listings`}>Back to my listings</NavLink>
-                        </div>
-                    </>
+        <>
+            <>
+                {(loadingMessage !== null)?
+                    <Loader message={loadingMessage} />
                     :
-                    <>
-                        <h1>Edit Listing</h1>
-                        <div className='w3-padding'>
-                            <NavLink className="w3-btn w3-round w3-theme-d5" to={`/my-profile/listings/${listingUniqueId.current !== null? listingUniqueId.current : ''}`}>Back to listing</NavLink>
-                        </div>
-                    </>
-                }
-    
-                <form className='w3-container' auto-complete='off' onSubmit={submitData} encType='multipart/form-data'>
-                    <div className='w3-padding-small w3-padding-top w3-margin-top'>
-                        <label htmlFor='listingInfo-title'>* Title</label>
-                        <input id='listingInfo-title' name='listingInfo-title' disabled={(isNotEditable('listingInfo-title'))} autoComplete='off'
-                                required={true} maxLength={50} minLength={10} aria-required={true}
-                                className='w3-input w3-input-theme-1' type='text' aria-label='Title' onChange={e=> handleChange(e)} value={listingInfo.title} />
-                        {updateMode &&
-                            getEditComponent('listingInfo-title')
-                        }
-                        <FieldError error={listingInfoErrors?.title} />
-                    </div>
-                    
-                    <div className='w3-margin-top'>
-                        <label htmlFor='listingInfo-transactionType'>* Transaction Type</label><br/>
-                        <Dropdown
-                            id='listingInfo-transactionType'
-                            label='Transaction Type'
-                            data={transactionTypes}
-                            selected={listingInfo.transactionType} // Default selected transaction type
-                            onItemSelected={transactionTypeSelected}
-                            isDisabled={isNotEditable('listingInfo-transactionType')}
-                            selReset={isNotEditable('listingInfo-transactionType')}
-                            dropdownStyle={{backgroundColor: '#a6b9a0', color: '#000'}}
-                        />
-                        {updateMode &&
-                            getEditComponent('listingInfo-transactionType')
-                        }
-                        <FieldError error={listingInfoErrors?.transactionType} />
-                    </div>
-                    
-                    <div className='w3-margin-top'>
-                        <label htmlFor='listingInfo-propertyType'>* Property Type</label><br/>
-                        <Dropdown
-                            id='listingInfo-propertyType'
-                            label='Property Type'
-                            data={propertyTypes}
-                            selected={listingInfo.propertyType} 
-                            onItemSelected={propertyTypeSelected}
-                            isDisabled={isNotEditable('listingInfo-propertyType')}
-                            selReset={isNotEditable('listingInfo-propertyType')}
-                            dropdownStyle={{backgroundColor: '#a6b9a0', color: '#000'}}
-                        />
-                        {updateMode &&
-                            getEditComponent('listingInfo-propertyType')
-                        }                                
-                        <FieldError error={listingInfoErrors?.propertyType} />
-                    </div>
-        
-                    <div className='w3-padding-top-24'>
-                        <h4>Price Info</h4>
-                        <div>
-                            <div className='w3-padding-small'>
-                                <label htmlFor='priceInfo-regularPrice'>* Price (R)</label>
-                                <input id='priceInfo-regularPrice' name='priceInfo-regularPrice' autoComplete='off' disabled={isNotEditable('priceInfo.regularPrice')} className='w3-input w3-input-theme-1' type='number' 
-                                       aria-label='Price' required={true} aria-required={true} onChange={e=> handleChange(e)} value={priceInfo.regularPrice}  />
-                                {updateMode &&
-                                    getEditComponent('priceInfo.regularPrice')
-                                }
-                                <FieldError error={priceInfoErrors?.regularPrice} />
-                            </div>
-        
-                            <div>
-                                <h5>Offer (Optional)</h5>
-                                <div>
-                                    <div className='w3-padding-small side-by-side'>
-                                        <label htmlFor='priceInfo-offer-discountedPrice'>Discounted Price (R)</label>
-                                        <input id='priceInfo-offer-discountedPrice' name='priceInfo-offer-discountedPrice' autoComplete='off' disabled={isNotEditable('priceInfo.offer.discountedPrice')} className='w3-input w3-input-theme-1'
-                                                type='number' aria-label='Discounted Price' onChange={e=> handleChange(e)} value={priceInfo.offer.discountedPrice} />
-                                        {updateMode &&
-                                            getEditComponent('priceInfo.offer.discountedPrice')
-                                        }
-                                        <FieldError error={priceInfoErrors?.offer?.discountedPrice} />
+                    <Registered>
+                        <div className='w3-container'>
+                            {listingUniqueId.current === null?
+                                <>
+                                    <h1>Add New Listing</h1>
+                                    <div className='w3-padding'>
+                                        <NavLink className='w3-btn w3-round w3-theme-d5'  to={`/my-profile/listings`}>Back to my listings</NavLink>
                                     </div>
-                                    
-                                    <div className='w3-padding-small side-by-side'>
-                                        <label htmlFor='priceInfo-offer-appliesFor'>Applies For (month/months)</label>
-                                        <input id='priceInfo-offer-appliesFor' name='priceInfo-offer-appliesFor' autoComplete='off' disabled={isNotEditable('priceInfo.offer.appliesFor')} className='w3-input w3-input-theme-1' type='number' 
-                                                aria-label='Applies For' onChange={e=> handleChange(e)} value={priceInfo.offer.appliesFor} />
-
-                                        {updateMode &&
-                                            getEditComponent('priceInfo.offer.appliesFor')
-                                        }
-                                        <FieldError error={priceInfoErrors?.offer?.appliesFor} />
+                                </>
+                                :
+                                <>
+                                    <h1>Edit Listing</h1>
+                                    <div className='w3-padding'>
+                                        <NavLink className="w3-btn w3-round w3-theme-d5" to={`/my-profile/listings/${listingUniqueId.current !== null? listingUniqueId.current : ''}`}>Back to listing</NavLink>
                                     </div>
-                                    
-                                    <div className='w3-padding-small side-by-side'>
-                                        <label htmlFor='priceInfo-offer-expiryDate'>Offer expires on</label>
-                                        <input id='priceInfo-offer-expiryDate' name='priceInfo-offer-expiryDate' autoComplete='off' disabled={isNotEditable('priceInfo.offer.expiryDate')} className='w3-input w3-input-theme-1' type='date' 
-                                                aria-label='Expiry Date' onChange={e=> handleChange(e)} value={priceInfo.offer.expiryDate} />
-                                        {updateMode &&
-                                            getEditComponent('priceInfo-offer-expiryDate')
-                                        }
-                                        <FieldError error={priceInfoErrors?.offer?.expiryDate} />
-                                    </div>
-                                </div>       
-                            </div>
-                        </div>  
-                    </div>
-        
-                    <div className='w3-padding-small padding-top-16'>
-                        <label htmlFor='listingInfo-description'>* Description</label>
-                        <textarea id='listingInfo-description' name='listingInfo-description' autoComplete='off' disabled={isNotEditable('listingInfo-description')}  required={true} aria-required={true} maxLength={250} minLength={50} className='w3-input w3-input-theme-1' type='text'
-                                aria-label='Description' onChange={e=> handleChange(e)} value={listingInfo.description} />
-                        {updateMode &&
-                            getEditComponent('listingInfo-description')
-                        }
-                        <FieldError error={listingInfoErrors?.description} />
-                    </div>
+                                </>
+                            }
+                
+                            <form className='w3-container' auto-complete='off' onSubmit={submitData} encType='multipart/form-data'>
+                                <div className='w3-padding-small w3-padding-top w3-margin-top'>
+                                    <label htmlFor='listingInfo-title'>* Title</label>
+                                    <input id='listingInfo-title' name='listingInfo-title' disabled={(isNotEditable('listingInfo-title'))} autoComplete='off'
+                                            required={true} maxLength={50} minLength={10} aria-required={true}
+                                            className='w3-input w3-input-theme-1' type='text' aria-label='Title' onChange={e=> handleChange(e)} value={listingInfo.title} />
+                                    {updateMode &&
+                                        getEditComponent('listingInfo-title')
+                                    }
+                                    <FieldError error={listingInfoErrors?.title} />
+                                </div>
                                 
-                    <div className='w3-padding-small'>
-                        <label htmlFor='specifications-numBedrooms'>* Number of bedrooms</label>
-                        <input id='specifications-numBedrooms' name='specifications-numBedrooms' autoComplete='off' disabled={isNotEditable('specifications-numBedrooms')}  required={true} aria-required={true} className='w3-input w3-input-theme-1' type='number' 
-                                aria-label='Number of bedrooms'  onChange={e=> handleChange(e)} value={specifications.numBedrooms} min={0} max={8} step={1}/>
-                        {updateMode &&
-                            getEditComponent('specifications-numBedrooms')
-                        }
-                        <FieldError error={specificationErrors?.numBedrooms} />
-                    </div>                    
-        
-                    <div className='w3-padding-small'>
-                        <label htmlFor='specifications-numBathrooms'>* Number of bathrooms</label>
-                        <input id='specifications-numBathrooms' name='specifications-numBathrooms' autoComplete='off' disabled={isNotEditable('specifications-numBathrooms')}  required={true} aria-required={true} className='w3-input w3-input-theme-1' type='number' 
-                                aria-label='Number of bathrooms'  onChange={e=> handleChange(e)} value={specifications.numBathrooms} min={0} max={8} step={1} />
-                        {updateMode &&
-                            getEditComponent('specifications-numBathrooms')
-                        }
-                        <FieldError error={specificationErrors?.numBathrooms} />
-                    </div> 
-        
-                    <div className='w3-padding-small'>
-                        <label htmlFor='specifications-parkingCapacity'>* Parking Capacity</label>
-                        <input id='specifications-parkingCapacity' name='specifications-parkingCapacity' autoComplete='off'  disabled={isNotEditable('specifications-parkingCapacity')} required={true} aria-required={true} className='w3-input w3-input-theme-1' type='number' 
-                                aria-label='Parking Capacity' onChange={e=> handleChange(e)} value={specifications.parkingCapacity} min={0} max={8} />
-                        {updateMode &&
-                            getEditComponent('specifications-parkingCapacity')
-                        }
-                        <FieldError error={specificationErrors?.parkingCapacity} />
-                    </div>
-        
-                    <div className='w3-padding-small'>
-                        <label htmlFor='specifications-garageCapacity'>Garage Capacity (Optional)</label>
-                        <input id='specifications-garageCapacity' name='specifications-garageCapacity' autoComplete='off'  disabled={isNotEditable('specifications-garageCapacity')} className='w3-input w3-input-theme-1' type='number' 
-                                aria-label='Parking Capacity' onChange={e=> handleChange(e)} value={specifications.garageCapacity} min={0} max={8} />
-                        {updateMode &&
-                            getEditComponent('specifications-garageCapacity')
-                        }
-                        <FieldError error={specificationErrors?.garageCapacity} />
-                    </div>
-        
-                    <div className='w3-padding-small'>
-                        <label htmlFor='specifications-totalFloorArea'>* Total Floor Area m<sup>2</sup></label>
-                        <input id='specifications-totalFloorArea' name='specifications-totalFloorArea' autoComplete='off'  disabled={isNotEditable('specifications-totalFloorArea')} className='w3-input w3-input-theme-1' type='number' 
-                                aria-label='Total Floor Area' onChange={e=> handleChange(e)} value={specifications.totalFloorArea} min={0} />
-                        {updateMode &&
-                            getEditComponent('specifications-totalFloorArea')
-                        }
-                        <FieldError error={specificationErrors?.totalFloorArea} />
-                    </div>
-        
-                    <div className='w3-padding-small'>
-                        <label htmlFor='specifications-erfSize'>Erf Size (Optional) m<sup>2</sup></label>
-                        <input id='specifications-erfSize' name='specifications-erfSize' autoComplete='off' disabled={isNotEditable('specifications-erfSize')} className='w3-input w3-input-theme-1' type='number' 
-                                aria-label='Erf Size (Optional)' onChange={e=> handleChange(e)} value={specifications.erfSize} min={0} />
-                        {updateMode &&
-                            getEditComponent('specifications-erfSize')
-                        }
-                        <FieldError error={specificationErrors?.erfSize} />
-                    </div>
-        
-                    <div className=''>
-                        <h4>Rates (Optional)</h4>
-                        <div className=''>
-                            <div className='w3-padding-small side-by-side'>
-                                <label htmlFor='rates-utilityRates-amount'>Municipal Utilities (R)</label>
-                                <input id='rates-utilityRates-amount' name='rates-utilityRates-amount' autoComplete='off' disabled={isNotEditable('rates.utilityRates.amount')} className='w3-input w3-input-theme-1'
-                                        type='number' aria-label='Municipal Utility Amount' onChange={e=> handleChange(e)} value={rates.utilityRates.amount} />
-                                {updateMode &&
-                                    getEditComponent('rates.utilityRates.amount')
-                                }
-                                <FieldError error={rateErrors?.utilityRates?.amount} />
-                            </div>
-                            
-                            <div className='w3-padding-small side-by-side'>
-                                <label htmlFor='rates-utilityRates-frequency'>Billed Every (month/months)</label>
-                                <input id='rates-utilityRates-frequency' name='rates-utilityRates-frequency' autoComplete='off' disabled={isNotEditable('rates.utilityRates.frequency')} className='w3-input w3-input-theme-1'
-                                        type='number' aria-label='Municipal Utility Billing Frequency' onChange={e=> handleChange(e)} value={rates.utilityRates.frequency} />
-                                {updateMode &&
-                                    getEditComponent('rates.utilityRates.frequency')
-                                }
-                                <FieldError error={rateErrors?.utilityRates?.frequency} />
-                            </div>
-                        </div>
-                        
-                        <div className=''>
-                            <div className='w3-padding-small side-by-side'>
-                                <label htmlFor='rates-propertyTax-amount'>Property Tax (R)</label>
-                                <input id='rates-propertyTax-amount' name='rates-propertyTax-amount' autoComplete='off' disabled={isNotEditable('rates.propertyTax.amount')} className='w3-input w3-input-theme-1'
-                                        type='number' aria-label='Property Tax' onChange={e=> handleChange(e)} value={rates.propertyTax.amount} />
-                                {updateMode &&
-                                    getEditComponent('rates.propertyTax.amount')
-                                }
-                                <FieldError error={rateErrors?.propertyTax?.amount} />
-                            </div>
-                            
-                            <div className='w3-padding-small side-by-side'>
-                                <label htmlFor='rates-propertyTax-frequency'>Billed Every (month/months)</label>
-                                <input id='rates-propertyTax-frequency' name='rates-propertyTax-frequency' autoComplete='off' disabled={isNotEditable('rates.propertyTax.frequency')} className='w3-input w3-input-theme-1'
-                                        type='number' aria-label='Property Tax Billing Frequency' onChange={e=> handleChange(e)} value={rates.propertyTax.frequency} />
-                                {updateMode &&
-                                    getEditComponent('rates.propertyTax.frequency')
-                                }
-                                <FieldError error={rateErrors?.propertyTax?.frequency} />
-                            </div>
-                        </div>
-                        
-                        <div className=''>
-                            <div className='w3-padding-small side-by-side'>
-                                <label htmlFor='rates-associationFees-amount'>Association Fees (R)</label>
-                                <input id='rates-associationFees-amount' name='rates-associationFees-amount' autoComplete='off' disabled={isNotEditable('rates.associationFees.amount')} className='w3-input w3-input-theme-1'
-                                        type='number' aria-label='Association Fees' onChange={e=> handleChange(e)} value={rates.associationFees.amount} />
-                                {updateMode &&
-                                    getEditComponent('rates.associationFees.amount')
-                                }
-                                <FieldError error={rateErrors?.associationFees?.amount} />
-                            </div>
-                            
-                            <div className='w3-padding-small side-by-side'>
-                                <label htmlFor='rates-associationFees-frequency'>Billed Every (month/months)</label>
-                                <input id='rates-associationFees-frequency' name='rates-associationFees-frequency' autoComplete='off' disabled={isNotEditable('rates.associationFees.frequency')} className='w3-input w3-input-theme-1'
-                                        type='number' aria-label='Association Fees Billing Frequency' onChange={e=> handleChange(e)} value={rates.associationFees.frequency} />
-                                {updateMode &&
-                                    getEditComponent('rates.associationFees.frequency')
-                                }
-                                <FieldError error={rateErrors?.associationFees?.frequency} />
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div className=''>
-                        <h4>Address</h4>  
-                        <div className='w3-padding-small'>
-                            <label htmlFor='address-complexName'>Buiding or Complex Name (Optional)</label>
-                            <input id='address-complexName' name='address-complexName' autoComplete='off' disabled={isNotEditable('address.complexName')} maxLength={50}  minLength={2} className='w3-input w3-input-theme-1' type='text' 
-                                    aria-label='Building or Complex Name (Optional)' onChange={e=> handleChange(e)} value={address.complexName}  />
-                            {updateMode &&
-                                getEditComponent('address.complexName')
-                            }
-                            <FieldError error={addressErrors?.complexName} />
-                        </div>
-        
-                        <div className='w3-padding-small'>
-                            <label htmlFor='address-unitNo'>Unit No. (Optional)</label>
-                            <input id='address-unitNo' name='address-unitNo' autoComplete='off' disabled={isNotEditable('address.unitNo')} maxLength={25} className='w3-input w3-input-theme-1' type='text' 
-                                    aria-label='Unit Number (Optional)' onChange={e=> handleChange(e)} value={address.unitNo} />
-                            {updateMode &&
-                                getEditComponent('address.unitNo')
-                            }
-                            <FieldError error={addressErrors?.unitNo} />
-                        </div>
-        
-                        <div className='w3-padding-small'>
-                            <label htmlFor='address-streetNo'>* Street No.</label>
-                            <input id='address-streetNo' name='address-streetNo' autoComplete='off' disabled={isNotEditable('address.streetNo')} required={true} aria-required={true} maxLength={10}
-                                    className='w3-input w3-input-theme-1' type='text' aria-label='Street Number'
-                                    onChange={e=> handleChange(e)} value={address.streetNo} />
-                            {updateMode &&
-                                getEditComponent('address.streetNo')
-                            }
-                            <FieldError error={addressErrors?.streetNo} />
-                        </div>
-                    
-                        <div className='w3-padding-small'>
-                            <label htmlFor='address-streetName'>Street Name (Optional)</label>
-                            <input id='address-streetName' name='address-streetName' autoComplete='off' disabled={isNotEditable('address.streetName')} maxLength={50} minLength={2} 
-                                    className='w3-input w3-input-theme-1' type='text' aria-label='Street Name (Optional)' onChange={e=> handleChange(e)}
-                                    value={address.streetName} />
-                            {updateMode &&
-                                getEditComponent('address.streetName')
-                            }
-                            <FieldError error={addressErrors?.streetName} />
-                        </div>
-        
-                        {provincesLoaded?
-                            <div className='w3-padding-small'>
-                                <label htmlFor='gisCodes-provincialCode'>* Province</label><br/>
-                                <DropdownObj
-                                    id='gisCodes-provincialCode'
-                                    label='Province'
-                                    sortFields={sortFields}
-                                    data={provinces}
-                                    selected={selectedProvince}
-                                    displayName='name'
-                                    valueName='code'
-                                    onItemSelected={provinceSelected}
-                                    isDisabled={isNotEditable('gisCodes.provincialCode')}
-                                    selReset={isNotEditable('gisCodes.provincialCode')}
-                                    dropdownStyle={{backgroundColor: '#a6b9a0', color: '#000'}}
-                                />
-                                {updateMode &&
-                                    getEditComponent('gisCodes.provincialCode')
-                                }
-                                <FieldError error={gisCodeErrors?.provincialCode} />
-                            </div>
-                            :
-                            <Loader message='Loading provinces ...' small={true} />
-                        }
-        
-                        {municipalitiesLoaded?
-                            <div className='w3-padding-small'>
-                                <label htmlFor='address-municipalityCode'>* Municipality</label><br/>
-                                <DropdownObj
-                                    id='gisCodes-municipalityCode'
-                                    label='Municipality'
-                                    data={municipalities}
-                                    sortFields={sortFields}
-                                    displayName='name'
-                                    valueName='code'
-                                    onItemSelected={municipalitySelected} 
-                                    selected={selectedMunicipality}
-                                    isDisabled={isNotEditable('gisCodes.municipalityCode')}
-                                    selReset={isNotEditable('gisCodes.municipalityCode')}
-                                    dropdownStyle={{backgroundColor: '#a6b9a0', color: '#000'}}
-                                />
-                                {updateMode &&
-                                    getEditComponent('gisCodes.municipalityCode')
-                                }
-                                <FieldError error={gisCodeErrors?.municipalityCode} />
-                            </div>
-                            :
-                            <Loader message='Loading municipalities ...' small={true}/>
-                        }
-        
-                        {mainPlacesLoaded?
-                            <div className='w3-padding-small'>
-                                <label htmlFor='gisCodes-mainPlaceCode'>* Main Place</label><br/>
-                                <DropdownObj
-                                    id='gisCodes-mainPlaceCode'
-                                    label='Main Place'
-                                    data={mainPlaces}
-                                    displayName='name'
-                                    valueName='code'
-                                    sortFields={sortFields}
-                                    onItemSelected={mainPlaceSelected} 
-                                    selected={selectedMainPlace}
-                                    isDisabled={isNotEditable('gisCodes.mainPlaceCode')}
-                                    selReset={isNotEditable('gisCodes.mainPlaceCode')}
-                                    dropdownStyle={{backgroundColor: '#a6b9a0', color: '#000'}}
-                                />
-                                {updateMode &&
-                                    getEditComponent('gisCodes.mainPlaceCode')
-                                }
-                                <FieldError error={gisCodeErrors?.mainPlaceCode} />
-                            </div>
-                            :
-                            <Loader message='Loading main places ...' small={true}/>
-                        }
-        
-                        {subPlacesLoaded?
-                            <div className='w3-padding-small'>
-                                <label htmlFor='gisCodes-subPlaceCode'>* Sub Place</label><br/>
-                                <DropdownObj
-                                    id='gisCodes-subPlaceCode'
-                                    label='Sub Place'
-                                    data={subPlaces}
-                                    displayName='name'
-                                    valueName='code'
-                                    sortFields={sortFields}
-                                    onItemSelected={subPlaceSelected}
-                                    selected={selectedSubPlace}
-                                    isDisabled={isNotEditable('gisCodes.subPlaceCode')}
-                                    selReset={isNotEditable('gisCodes.subPlaceCode')}
-                                    dropdownStyle={{backgroundColor: '#a6b9a0', color: '#000'}}
-                                />
-                                {updateMode &&
-                                    getEditComponent('gisCodes.subPlaceCode')
-                                }
-                                <FieldError error={gisCodeErrors?.subPlaceCode} />
-                            </div>
-                            :
-                            <Loader message='Loading sub-places ...' small={true}/>
-                        }
-                    </div>
-        
-                    <div className=''>
-                        <h4>Map Coordinates (Optional)</h4>
-                        <div>
-                            <div className='w3-padding-small side-by-side'>
-                                <label htmlFor='mapCoordinates-latitude'>Latitude</label>
-                                <input id='mapCoordinates-latitude' name='mapCoordinates-latitude' autoComplete='off' disabled={isNotEditable('mapCoordinates.latitude')} className='w3-input w3-input-theme-1' type='number' 
-                                        aria-label='Latitude' onChange={e=> handleChange(e)} value={mapCoordinates.latitude}  />
-                                {updateMode &&
-                                    getEditComponent('mapCoordinates.latitude')
-                                }
-                                <FieldError error={mapCoordinateErrors?.latitude} />
-                            </div>
-        
-                            <div className='w3-padding-small side-by-side'>
-                                <label htmlFor='mapCoordinates-longitude'>Longitude</label>
-                                <input id='mapCoordinates-longitude' name='mapCoordinates-longitude' autoComplete='off' disabled={isNotEditable('mapCoordinates.longitude')} maxLength={50} minLength={2} className='w3-input w3-input-theme-1' type='number' 
-                                        aria-label='Longitude' onChange={e=> handleChange(e)} value={mapCoordinates.longitude} />
-                                {updateMode &&
-                                    getEditComponent('mapCoordinates-longitude')
-                                }
-                                <FieldError error={mapCoordinateErrors?.longitude} />
-                            </div>
-                        </div>  
-                    </div>
-        
-                    <div>
-                        {currentImages.length > 0 &&
-                            <div>
-                                <h4>Images</h4>
-                                <div className='w3-padding-small w3-content w3-display-container'>
-                                    {currentImages.map((image, index)=> {
-                                            return (
-                                                <img className='mySlides' 
-                                                    key={`${image.name}${index}`}
-                                                    src={image.url} 
-                                                    alt={`image${index + 1}`}
-                                                    style={{width: '100%',
-                                                    display: (slideIndex === index? 'block':'none')}}/>
-                                            );
-                                        }) // currentImages.map((imageUrl, index)=> {
-                                    }   
-                                                             
-                                    <button className="w3-button w3-black w3-display-left" type='button' onClick={e=> goNext(-1)}>&#10094;</button>
-                                    <button className="w3-button w3-black w3-display-right" type='button' onClick={e=> goNext(1)}>&#10095;</button>
-                                    <div className='w3-padding w3-margin'>
-                                        <input type='checkbox' id='markForDeletion' name='markForDeletion' className='w3-input-theme-1' checked={currentImages[slideIndex]?.toDelete === true}
-                                                onChange={e=> handleMarkedForDeletionClicked(e)} />
-                                        <label htmlFor='markForDelection'> <BsTrash3/>Mark this image for Deletion</label>
-                                    </div>
+                                <div className='w3-margin-top'>
+                                    <label htmlFor='listingInfo-transactionType'>* Transaction Type</label><br/>
+                                    <Dropdown
+                                        id='listingInfo-transactionType'
+                                        label='Transaction Type'
+                                        data={transactionTypes}
+                                        selected={listingInfo.transactionType} // Default selected transaction type
+                                        onItemSelected={transactionTypeSelected}
+                                        isDisabled={isNotEditable('listingInfo-transactionType')}
+                                        selReset={isNotEditable('listingInfo-transactionType')}
+                                        dropdownStyle={{backgroundColor: '#a6b9a0', color: '#000'}}
+                                    />
+                                    {updateMode &&
+                                        getEditComponent('listingInfo-transactionType')
+                                    }
+                                    <FieldError error={listingInfoErrors?.transactionType} />
                                 </div>
-                            </div>
-                        } 
-                        
-                        {((updateMode && attachImages && currentImages.length < 6)
-                            || (!updateMode)) &&
-                            <div className='w3-margin-top'>
-                                <h4>Attach images</h4>
-                                {imagesToUpload.length > 0 &&
-                                    <div className='w3-padding w3-margin-top'>
-                                        List of attached images
-                                        <>
-                                            {imagesToUpload.map((file, index)=> {
-                                                const fileError = !allowedListingImageSize(file)?
-                                                                    'File size not allowed!' 
-                                                                    : // else if
-                                                                    !allowedFileTypes.includes(file.type)?
-                                                                        'File type not allowed!' 
-                                                                        : // else
-                                                                        null;
-                                                return (
-                                                    <div className='w3-input-theme-1 w3-padding-samll' key={`${file.name}${index}`} onClick={e=> removeImageToUpload(file)}>
-                                                        <NavLink>
-                                                            {file.name} : ({fileSizeMiB(file).toFixed(2)} MiB) {(fileError !== null) && <span><BiSolidError/>{fileError}</span>}<BsTrash3/>
-                                                        </NavLink>
-                                                    </div>
-                                                );
-                                            })}
-                                        </>
-                                    </div>
-                                }
-                                {(uploadingErrors?.length > 0) &&
-                                    <div className='w3-padding-top'>
-                                        {
-                                            uploadingErrors.map((err, idx) => {
-                                                return (
-                                                    <div  key={idx} className='w3-padding-small'>
-                                                        <FieldError error={err}/><br/>
-                                                    </div>
-                                                );
-                                            })
-                                        }
-                                    </div>
-                                }
-                                <div className='w3-padding-small w3-margin-top'>
-                                    <label htmlFor='image'>* Attach images <IoMdAttach/></label>
-                                    <input id='imagesToUpload' name='imagesToUpload' multiple={true} disabled={imagesToUpload.length >= 6} className='w3-input w3-input-theme-1'
-                                            type='file' aria-label='Upload image' onChange={e=> handleChange(e)} />
+                                
+                                <div className='w3-margin-top'>
+                                    <label htmlFor='listingInfo-propertyType'>* Property Type</label><br/>
+                                    <Dropdown
+                                        id='listingInfo-propertyType'
+                                        label='Property Type'
+                                        data={propertyTypes}
+                                        selected={listingInfo.propertyType} 
+                                        onItemSelected={propertyTypeSelected}
+                                        isDisabled={isNotEditable('listingInfo-propertyType')}
+                                        selReset={isNotEditable('listingInfo-propertyType')}
+                                        dropdownStyle={{backgroundColor: '#a6b9a0', color: '#000'}}
+                                    />
+                                    {updateMode &&
+                                        getEditComponent('listingInfo-propertyType')
+                                    }                                
+                                    <FieldError error={listingInfoErrors?.propertyType} />
+                                </div>
+                    
+                                <div className='w3-padding-top-24'>
+                                    <h4>Price Info</h4>
                                     <div>
-                                        Allowed file types {allowedFileTypes.join(' ')}. Up to 1MiB
+                                        <div className='w3-padding-small'>
+                                            <label htmlFor='priceInfo-regularPrice'>* Price (R)</label>
+                                            <input id='priceInfo-regularPrice' name='priceInfo-regularPrice' autoComplete='off' disabled={isNotEditable('priceInfo.regularPrice')} className='w3-input w3-input-theme-1' type='number' 
+                                                aria-label='Price' required={true} aria-required={true} onChange={e=> handleChange(e)} value={priceInfo.regularPrice}  />
+                                            {updateMode &&
+                                                getEditComponent('priceInfo.regularPrice')
+                                            }
+                                            <FieldError error={priceInfoErrors?.regularPrice} />
+                                        </div>
+                    
+                                        <div>
+                                            <h5>Offer (Optional)</h5>
+                                            <div>
+                                                <div className='w3-padding-small side-by-side'>
+                                                    <label htmlFor='priceInfo-offer-discountedPrice'>Discounted Price (R)</label>
+                                                    <input id='priceInfo-offer-discountedPrice' name='priceInfo-offer-discountedPrice' autoComplete='off' disabled={isNotEditable('priceInfo.offer.discountedPrice')} className='w3-input w3-input-theme-1'
+                                                            type='number' aria-label='Discounted Price' onChange={e=> handleChange(e)} value={priceInfo.offer.discountedPrice} />
+                                                    {updateMode &&
+                                                        getEditComponent('priceInfo.offer.discountedPrice')
+                                                    }
+                                                    <FieldError error={priceInfoErrors?.offer?.discountedPrice} />
+                                                </div>
+                                                
+                                                <div className='w3-padding-small side-by-side'>
+                                                    <label htmlFor='priceInfo-offer-appliesFor'>Applies For (month/months)</label>
+                                                    <input id='priceInfo-offer-appliesFor' name='priceInfo-offer-appliesFor' autoComplete='off' disabled={isNotEditable('priceInfo.offer.appliesFor')} className='w3-input w3-input-theme-1' type='number' 
+                                                            aria-label='Applies For' onChange={e=> handleChange(e)} value={priceInfo.offer.appliesFor} />
+
+                                                    {updateMode &&
+                                                        getEditComponent('priceInfo.offer.appliesFor')
+                                                    }
+                                                    <FieldError error={priceInfoErrors?.offer?.appliesFor} />
+                                                </div>
+                                                
+                                                <div className='w3-padding-small side-by-side'>
+                                                    <label htmlFor='priceInfo-offer-expiryDate'>Offer expires on</label>
+                                                    <input id='priceInfo-offer-expiryDate' name='priceInfo-offer-expiryDate' autoComplete='off' disabled={isNotEditable('priceInfo.offer.expiryDate')} className='w3-input w3-input-theme-1' type='date' 
+                                                            aria-label='Expiry Date' onChange={e=> handleChange(e)} value={priceInfo.offer.expiryDate} />
+                                                    {updateMode &&
+                                                        getEditComponent('priceInfo-offer-expiryDate')
+                                                    }
+                                                    <FieldError error={priceInfoErrors?.offer?.expiryDate} />
+                                                </div>
+                                            </div>       
+                                        </div>
+                                    </div>  
+                                </div>
+                    
+                                <div className='w3-padding-small padding-top-16'>
+                                    <label htmlFor='listingInfo-description'>* Description</label>
+                                    <textarea id='listingInfo-description' name='listingInfo-description' autoComplete='off' disabled={isNotEditable('listingInfo-description')}  required={true} aria-required={true} maxLength={250} minLength={50} className='w3-input w3-input-theme-1' type='text'
+                                            aria-label='Description' onChange={e=> handleChange(e)} value={listingInfo.description} />
+                                    {updateMode &&
+                                        getEditComponent('listingInfo-description')
+                                    }
+                                    <FieldError error={listingInfoErrors?.description} />
+                                </div>
+                                            
+                                <div className='w3-padding-small'>
+                                    <label htmlFor='specifications-numBedrooms'>* Number of bedrooms</label>
+                                    <input id='specifications-numBedrooms' name='specifications-numBedrooms' autoComplete='off' disabled={isNotEditable('specifications-numBedrooms')}  required={true} aria-required={true} className='w3-input w3-input-theme-1' type='number' 
+                                            aria-label='Number of bedrooms'  onChange={e=> handleChange(e)} value={specifications.numBedrooms} min={0} max={8} step={1}/>
+                                    {updateMode &&
+                                        getEditComponent('specifications-numBedrooms')
+                                    }
+                                    <FieldError error={specificationErrors?.numBedrooms} />
+                                </div>                    
+                    
+                                <div className='w3-padding-small'>
+                                    <label htmlFor='specifications-numBathrooms'>* Number of bathrooms</label>
+                                    <input id='specifications-numBathrooms' name='specifications-numBathrooms' autoComplete='off' disabled={isNotEditable('specifications-numBathrooms')}  required={true} aria-required={true} className='w3-input w3-input-theme-1' type='number' 
+                                            aria-label='Number of bathrooms'  onChange={e=> handleChange(e)} value={specifications.numBathrooms} min={0} max={8} step={1} />
+                                    {updateMode &&
+                                        getEditComponent('specifications-numBathrooms')
+                                    }
+                                    <FieldError error={specificationErrors?.numBathrooms} />
+                                </div> 
+                    
+                                <div className='w3-padding-small'>
+                                    <label htmlFor='specifications-parkingCapacity'>* Parking Capacity</label>
+                                    <input id='specifications-parkingCapacity' name='specifications-parkingCapacity' autoComplete='off'  disabled={isNotEditable('specifications-parkingCapacity')} required={true} aria-required={true} className='w3-input w3-input-theme-1' type='number' 
+                                            aria-label='Parking Capacity' onChange={e=> handleChange(e)} value={specifications.parkingCapacity} min={0} max={8} />
+                                    {updateMode &&
+                                        getEditComponent('specifications-parkingCapacity')
+                                    }
+                                    <FieldError error={specificationErrors?.parkingCapacity} />
+                                </div>
+                    
+                                <div className='w3-padding-small'>
+                                    <label htmlFor='specifications-garageCapacity'>Garage Capacity (Optional)</label>
+                                    <input id='specifications-garageCapacity' name='specifications-garageCapacity' autoComplete='off'  disabled={isNotEditable('specifications-garageCapacity')} className='w3-input w3-input-theme-1' type='number' 
+                                            aria-label='Parking Capacity' onChange={e=> handleChange(e)} value={specifications.garageCapacity} min={0} max={8} />
+                                    {updateMode &&
+                                        getEditComponent('specifications-garageCapacity')
+                                    }
+                                    <FieldError error={specificationErrors?.garageCapacity} />
+                                </div>
+                    
+                                <div className='w3-padding-small'>
+                                    <label htmlFor='specifications-totalFloorArea'>* Total Floor Area m<sup>2</sup></label>
+                                    <input id='specifications-totalFloorArea' name='specifications-totalFloorArea' autoComplete='off'  disabled={isNotEditable('specifications-totalFloorArea')} className='w3-input w3-input-theme-1' type='number' 
+                                            aria-label='Total Floor Area' onChange={e=> handleChange(e)} value={specifications.totalFloorArea} min={0} />
+                                    {updateMode &&
+                                        getEditComponent('specifications-totalFloorArea')
+                                    }
+                                    <FieldError error={specificationErrors?.totalFloorArea} />
+                                </div>
+                    
+                                <div className='w3-padding-small'>
+                                    <label htmlFor='specifications-erfSize'>Erf Size (Optional) m<sup>2</sup></label>
+                                    <input id='specifications-erfSize' name='specifications-erfSize' autoComplete='off' disabled={isNotEditable('specifications-erfSize')} className='w3-input w3-input-theme-1' type='number' 
+                                            aria-label='Erf Size (Optional)' onChange={e=> handleChange(e)} value={specifications.erfSize} min={0} />
+                                    {updateMode &&
+                                        getEditComponent('specifications-erfSize')
+                                    }
+                                    <FieldError error={specificationErrors?.erfSize} />
+                                </div>
+                    
+                                <div className=''>
+                                    <h4>Rates (Optional)</h4>
+                                    <div className=''>
+                                        <div className='w3-padding-small side-by-side'>
+                                            <label htmlFor='rates-utilityRates-amount'>Municipal Utilities (R)</label>
+                                            <input id='rates-utilityRates-amount' name='rates-utilityRates-amount' autoComplete='off' disabled={isNotEditable('rates.utilityRates.amount')} className='w3-input w3-input-theme-1'
+                                                    type='number' aria-label='Municipal Utility Amount' onChange={e=> handleChange(e)} value={rates.utilityRates.amount} />
+                                            {updateMode &&
+                                                getEditComponent('rates.utilityRates.amount')
+                                            }
+                                            <FieldError error={rateErrors?.utilityRates?.amount} />
+                                        </div>
+                                        
+                                        <div className='w3-padding-small side-by-side'>
+                                            <label htmlFor='rates-utilityRates-frequency'>Billed Every (month/months)</label>
+                                            <input id='rates-utilityRates-frequency' name='rates-utilityRates-frequency' autoComplete='off' disabled={isNotEditable('rates.utilityRates.frequency')} className='w3-input w3-input-theme-1'
+                                                    type='number' aria-label='Municipal Utility Billing Frequency' onChange={e=> handleChange(e)} value={rates.utilityRates.frequency} />
+                                            {updateMode &&
+                                                getEditComponent('rates.utilityRates.frequency')
+                                            }
+                                            <FieldError error={rateErrors?.utilityRates?.frequency} />
+                                        </div>
+                                    </div>
+                                    
+                                    <div className=''>
+                                        <div className='w3-padding-small side-by-side'>
+                                            <label htmlFor='rates-propertyTax-amount'>Property Tax (R)</label>
+                                            <input id='rates-propertyTax-amount' name='rates-propertyTax-amount' autoComplete='off' disabled={isNotEditable('rates.propertyTax.amount')} className='w3-input w3-input-theme-1'
+                                                    type='number' aria-label='Property Tax' onChange={e=> handleChange(e)} value={rates.propertyTax.amount} />
+                                            {updateMode &&
+                                                getEditComponent('rates.propertyTax.amount')
+                                            }
+                                            <FieldError error={rateErrors?.propertyTax?.amount} />
+                                        </div>
+                                        
+                                        <div className='w3-padding-small side-by-side'>
+                                            <label htmlFor='rates-propertyTax-frequency'>Billed Every (month/months)</label>
+                                            <input id='rates-propertyTax-frequency' name='rates-propertyTax-frequency' autoComplete='off' disabled={isNotEditable('rates.propertyTax.frequency')} className='w3-input w3-input-theme-1'
+                                                    type='number' aria-label='Property Tax Billing Frequency' onChange={e=> handleChange(e)} value={rates.propertyTax.frequency} />
+                                            {updateMode &&
+                                                getEditComponent('rates.propertyTax.frequency')
+                                            }
+                                            <FieldError error={rateErrors?.propertyTax?.frequency} />
+                                        </div>
+                                    </div>
+                                    
+                                    <div className=''>
+                                        <div className='w3-padding-small side-by-side'>
+                                            <label htmlFor='rates-associationFees-amount'>Association Fees (R)</label>
+                                            <input id='rates-associationFees-amount' name='rates-associationFees-amount' autoComplete='off' disabled={isNotEditable('rates.associationFees.amount')} className='w3-input w3-input-theme-1'
+                                                    type='number' aria-label='Association Fees' onChange={e=> handleChange(e)} value={rates.associationFees.amount} />
+                                            {updateMode &&
+                                                getEditComponent('rates.associationFees.amount')
+                                            }
+                                            <FieldError error={rateErrors?.associationFees?.amount} />
+                                        </div>
+                                        
+                                        <div className='w3-padding-small side-by-side'>
+                                            <label htmlFor='rates-associationFees-frequency'>Billed Every (month/months)</label>
+                                            <input id='rates-associationFees-frequency' name='rates-associationFees-frequency' autoComplete='off' disabled={isNotEditable('rates.associationFees.frequency')} className='w3-input w3-input-theme-1'
+                                                    type='number' aria-label='Association Fees Billing Frequency' onChange={e=> handleChange(e)} value={rates.associationFees.frequency} />
+                                            {updateMode &&
+                                                getEditComponent('rates.associationFees.frequency')
+                                            }
+                                            <FieldError error={rateErrors?.associationFees?.frequency} />
+                                        </div>
                                     </div>
                                 </div>
-                                <div>
-                                    {(attachmentErrors?.length > 0) &&
-                                        <div className='w3-padding-top'>
-                                            {
-                                                attachmentErrors.map((err, idx) => {
-                                                    return (
-                                                        <div key={idx} className='w3-padding-small'>
-                                                            <FieldError error={err}/><br/>
-                                                        </div>
-                                                    );
-                                                })
+                                
+                                <div className=''>
+                                    <h4>Address</h4>  
+                                    <div className='w3-padding-small'>
+                                        <label htmlFor='address-complexName'>Buiding or Complex Name (Optional)</label>
+                                        <input id='address-complexName' name='address-complexName' autoComplete='off' disabled={isNotEditable('address.complexName')} maxLength={50}  minLength={2} className='w3-input w3-input-theme-1' type='text' 
+                                                aria-label='Building or Complex Name (Optional)' onChange={e=> handleChange(e)} value={address.complexName}  />
+                                        {updateMode &&
+                                            getEditComponent('address.complexName')
+                                        }
+                                        <FieldError error={addressErrors?.complexName} />
+                                    </div>
+                    
+                                    <div className='w3-padding-small'>
+                                        <label htmlFor='address-unitNo'>Unit No. (Optional)</label>
+                                        <input id='address-unitNo' name='address-unitNo' autoComplete='off' disabled={isNotEditable('address.unitNo')} maxLength={25} className='w3-input w3-input-theme-1' type='text' 
+                                                aria-label='Unit Number (Optional)' onChange={e=> handleChange(e)} value={address.unitNo} />
+                                        {updateMode &&
+                                            getEditComponent('address.unitNo')
+                                        }
+                                        <FieldError error={addressErrors?.unitNo} />
+                                    </div>
+                    
+                                    <div className='w3-padding-small'>
+                                        <label htmlFor='address-streetNo'>* Street No.</label>
+                                        <input id='address-streetNo' name='address-streetNo' autoComplete='off' disabled={isNotEditable('address.streetNo')} required={true} aria-required={true} maxLength={10}
+                                                className='w3-input w3-input-theme-1' type='text' aria-label='Street Number'
+                                                onChange={e=> handleChange(e)} value={address.streetNo} />
+                                        {updateMode &&
+                                            getEditComponent('address.streetNo')
+                                        }
+                                        <FieldError error={addressErrors?.streetNo} />
+                                    </div>
+                                
+                                    <div className='w3-padding-small'>
+                                        <label htmlFor='address-streetName'>Street Name (Optional)</label>
+                                        <input id='address-streetName' name='address-streetName' autoComplete='off' disabled={isNotEditable('address.streetName')} maxLength={50} minLength={2} 
+                                                className='w3-input w3-input-theme-1' type='text' aria-label='Street Name (Optional)' onChange={e=> handleChange(e)}
+                                                value={address.streetName} />
+                                        {updateMode &&
+                                            getEditComponent('address.streetName')
+                                        }
+                                        <FieldError error={addressErrors?.streetName} />
+                                    </div>
+                    
+                                    {provincesLoaded?
+                                        <div className='w3-padding-small'>
+                                            <label htmlFor='gisCodes-provincialCode'>* Province</label><br/>
+                                            <DropdownObj
+                                                id='gisCodes-provincialCode'
+                                                label='Province'
+                                                sortFields={sortFields}
+                                                data={provinces}
+                                                selected={selectedProvince}
+                                                displayName='name'
+                                                valueName='code'
+                                                onItemSelected={provinceSelected}
+                                                isDisabled={isNotEditable('gisCodes.provincialCode')}
+                                                selReset={isNotEditable('gisCodes.provincialCode')}
+                                                dropdownStyle={{backgroundColor: '#a6b9a0', color: '#000'}}
+                                            />
+                                            {updateMode &&
+                                                getEditComponent('gisCodes.provincialCode')
                                             }
+                                            <FieldError error={gisCodeErrors?.provincialCode} />
                                         </div>
+                                        :
+                                        <Loader message='Loading provinces ...' small={true} />
+                                    }
+                    
+                                    {municipalitiesLoaded?
+                                        <div className='w3-padding-small'>
+                                            <label htmlFor='address-municipalityCode'>* Municipality</label><br/>
+                                            <DropdownObj
+                                                id='gisCodes-municipalityCode'
+                                                label='Municipality'
+                                                data={municipalities}
+                                                sortFields={sortFields}
+                                                displayName='name'
+                                                valueName='code'
+                                                onItemSelected={municipalitySelected} 
+                                                selected={selectedMunicipality}
+                                                isDisabled={isNotEditable('gisCodes.municipalityCode')}
+                                                selReset={isNotEditable('gisCodes.municipalityCode')}
+                                                dropdownStyle={{backgroundColor: '#a6b9a0', color: '#000'}}
+                                            />
+                                            {updateMode &&
+                                                getEditComponent('gisCodes.municipalityCode')
+                                            }
+                                            <FieldError error={gisCodeErrors?.municipalityCode} />
+                                        </div>
+                                        :
+                                        <Loader message='Loading municipalities ...' small={true}/>
+                                    }
+                    
+                                    {mainPlacesLoaded?
+                                        <div className='w3-padding-small'>
+                                            <label htmlFor='gisCodes-mainPlaceCode'>* Main Place</label><br/>
+                                            <DropdownObj
+                                                id='gisCodes-mainPlaceCode'
+                                                label='Main Place'
+                                                data={mainPlaces}
+                                                displayName='name'
+                                                valueName='code'
+                                                sortFields={sortFields}
+                                                onItemSelected={mainPlaceSelected} 
+                                                selected={selectedMainPlace}
+                                                isDisabled={isNotEditable('gisCodes.mainPlaceCode')}
+                                                selReset={isNotEditable('gisCodes.mainPlaceCode')}
+                                                dropdownStyle={{backgroundColor: '#a6b9a0', color: '#000'}}
+                                            />
+                                            {updateMode &&
+                                                getEditComponent('gisCodes.mainPlaceCode')
+                                            }
+                                            <FieldError error={gisCodeErrors?.mainPlaceCode} />
+                                        </div>
+                                        :
+                                        <Loader message='Loading main places ...' small={true}/>
+                                    }
+                    
+                                    {subPlacesLoaded?
+                                        <div className='w3-padding-small'>
+                                            <label htmlFor='gisCodes-subPlaceCode'>* Sub Place</label><br/>
+                                            <DropdownObj
+                                                id='gisCodes-subPlaceCode'
+                                                label='Sub Place'
+                                                data={subPlaces}
+                                                displayName='name'
+                                                valueName='code'
+                                                sortFields={sortFields}
+                                                onItemSelected={subPlaceSelected}
+                                                selected={selectedSubPlace}
+                                                isDisabled={isNotEditable('gisCodes.subPlaceCode')}
+                                                selReset={isNotEditable('gisCodes.subPlaceCode')}
+                                                dropdownStyle={{backgroundColor: '#a6b9a0', color: '#000'}}
+                                            />
+                                            {updateMode &&
+                                                getEditComponent('gisCodes.subPlaceCode')
+                                            }
+                                            <FieldError error={gisCodeErrors?.subPlaceCode} />
+                                        </div>
+                                        :
+                                        <Loader message='Loading sub-places ...' small={true}/>
                                     }
                                 </div>
-                            </div>
-                        }
-                        {getAttachmentIcon()}
-                    </div>               
-                                
-                    <div className='w3-padding'>
-                        <button className='w3-btn w3-margin-small w3-theme-d5 w3-round' disabled={disableButton()} type='submit'>Save</button>
-                    </div>
+                    
+                                <div className=''>
+                                    <h4>Map Coordinates (Optional)</h4>
+                                    <div>
+                                        <div className='w3-padding-small side-by-side'>
+                                            <label htmlFor='mapCoordinates-latitude'>Latitude</label>
+                                            <input id='mapCoordinates-latitude' name='mapCoordinates-latitude' autoComplete='off' disabled={isNotEditable('mapCoordinates.latitude')} className='w3-input w3-input-theme-1' type='number' 
+                                                    aria-label='Latitude' onChange={e=> handleChange(e)} value={mapCoordinates.latitude}  />
+                                            {updateMode &&
+                                                getEditComponent('mapCoordinates.latitude')
+                                            }
+                                            <FieldError error={mapCoordinateErrors?.latitude} />
+                                        </div>
+                    
+                                        <div className='w3-padding-small side-by-side'>
+                                            <label htmlFor='mapCoordinates-longitude'>Longitude</label>
+                                            <input id='mapCoordinates-longitude' name='mapCoordinates-longitude' autoComplete='off' disabled={isNotEditable('mapCoordinates.longitude')} maxLength={50} minLength={2} className='w3-input w3-input-theme-1' type='number' 
+                                                    aria-label='Longitude' onChange={e=> handleChange(e)} value={mapCoordinates.longitude} />
+                                            {updateMode &&
+                                                getEditComponent('mapCoordinates-longitude')
+                                            }
+                                            <FieldError error={mapCoordinateErrors?.longitude} />
+                                        </div>
+                                    </div>  
+                                </div>
+                    
+                                <div>
+                                    {currentImages.length > 0 &&
+                                        <div>
+                                            <h4>Images</h4>
+                                            <div className='w3-padding-small w3-content w3-display-container'>
+                                                {currentImages.map((image, index)=> {
+                                                        return (
+                                                            <img className='mySlides' 
+                                                                key={`${image.name}${index}`}
+                                                                src={image.url} 
+                                                                alt={`image${index + 1}`}
+                                                                style={{width: '100%',
+                                                                display: (slideIndex === index? 'block':'none')}}/>
+                                                        );
+                                                    }) // currentImages.map((imageUrl, index)=> {
+                                                }   
+                                                                        
+                                                <button className="w3-button w3-black w3-display-left" type='button' onClick={e=> goNext(-1)}>&#10094;</button>
+                                                <button className="w3-button w3-black w3-display-right" type='button' onClick={e=> goNext(1)}>&#10095;</button>
+                                                <div className='w3-padding w3-margin'>
+                                                    <input type='checkbox' id='markForDeletion' name='markForDeletion' className='w3-input-theme-1 w3-check' checked={currentImages[slideIndex]?.toDelete === true}
+                                                            onChange={e=> handleMarkedForDeletionClicked(e)} />
+                                                    <label htmlFor='markForDelection'> <BsTrash3/>Mark this image for Deletion</label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    } 
+                                    
+                                    {((updateMode && attachImages && currentImages.length < 6)
+                                        || (!updateMode)) &&
+                                        <div className='w3-margin-top'>
+                                            <h4>Attach images</h4>
+                                            {imagesToUpload.length > 0 &&
+                                                <div className='w3-padding w3-margin-top'>
+                                                    List of attached images
+                                                    <>
+                                                        {imagesToUpload.map((file, index)=> {
+                                                            const fileError = !allowedListingImageSize(file)?
+                                                                                'File size not allowed!' 
+                                                                                : // else if
+                                                                                !allowedFileTypes.includes(file.type)?
+                                                                                    'File type not allowed!' 
+                                                                                    : // else
+                                                                                    null;
+                                                            return (
+                                                                <div className='w3-input-theme-1 w3-padding-samll' key={`${file.name}${index}`} onClick={e=> removeImageToUpload(file)}>
+                                                                    <NavLink>
+                                                                        {file.name} : ({fileSizeMiB(file).toFixed(2)} MiB) {(fileError !== null) && <span><BiSolidError/>{fileError}</span>}<BsTrash3/>
+                                                                    </NavLink>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </>
+                                                </div>
+                                            }
+                                            {(uploadingErrors?.length > 0) &&
+                                                <div className='w3-padding-top'>
+                                                    {
+                                                        uploadingErrors.map((err, idx) => {
+                                                            return (
+                                                                <div  key={idx} className='w3-padding-small'>
+                                                                    <FieldError error={err}/><br/>
+                                                                </div>
+                                                            );
+                                                        })
+                                                    }
+                                                </div>
+                                            }
+                                            <div className='w3-padding-small w3-margin-top'>
+                                                <label htmlFor='image'>* Attach images <IoMdAttach/></label>
+                                                <input id='imagesToUpload' name='imagesToUpload' multiple={true} disabled={imagesToUpload.length >= 6} className='w3-input w3-input-theme-1'
+                                                        type='file' aria-label='Upload image' onChange={e=> handleChange(e)} />
+                                                <div>
+                                                    Allowed file types {allowedFileTypes.join(' ')}. Up to 1MiB
+                                                </div>
+                                            </div>
+                                            <div>
+                                                {(attachmentErrors?.length > 0) &&
+                                                    <div className='w3-padding-top'>
+                                                        {
+                                                            attachmentErrors.map((err, idx) => {
+                                                                return (
+                                                                    <div key={idx} className='w3-padding-small'>
+                                                                        <FieldError error={err}/><br/>
+                                                                    </div>
+                                                                );
+                                                            })
+                                                        }
+                                                    </div>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+                                    {getAttachmentIcon()}
+                                </div>               
+                                            
+                                <div className='w3-padding'>
+                                    <button className='w3-btn w3-margin-small w3-theme-d5 w3-round' disabled={disableButton()} type='submit'>Save</button>
+                                </div>
 
-                    {listingUniqueId.current === null?                
-                        <div className='w3-padding'>
-                            <NavLink className="w3-btn w3-round w3-theme-d5" to={`/my-profile/listings`}>Back to my listings</NavLink>
+                                {listingUniqueId.current === null?                
+                                    <div className='w3-padding'>
+                                        <NavLink className="w3-btn w3-round w3-theme-d5" to={`/my-profile/listings`}>Back to my listings</NavLink>
+                                    </div>
+                                    :
+                                    <div className='w3-padding'>
+                                        <NavLink className="w3-btn w3-round w3-theme-d5" to={`/my-profile/listings/${listingUniqueId.current !== null? listingUniqueId.current : ''}`}>Back to listing</NavLink>
+                                    </div>
+                                }
+                    
+                            </form>
                         </div>
-                        :
-                        <div className='w3-padding'>
-                            <NavLink className="w3-btn w3-round w3-theme-d5" to={`/my-profile/listings/${listingUniqueId.current !== null? listingUniqueId.current : ''}`}>Back to listing</NavLink>
-                        </div>
-                    }
-        
-                </form>
+                    </Registered>
+                }
+            </>
+            <>
                 <ToastContainer/>
-            </div>
-        </Registered>
+            </>
+        </>            
     );
 }
 

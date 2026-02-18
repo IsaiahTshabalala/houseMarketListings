@@ -2,11 +2,12 @@
  * File: ./src/components/SignInEmail.js
  * Description: Facilitate login using email.
  * 
- * Date        Dev   Description
- * 2023/07/26  ITA   Genesis.
- * 2024/06/10  ITA   Add header commment
- *                   Navlinks to appear as buttons.
- * 2024/09/17  ITA   Import context directly. Sign-in dispatch actions removed, since they are auto-performed by the top-most component (CurrentUserState) of this web app.
+ * Start Date  End Date     Dev    Version   Description
+ * 2023/07/26               ITA    1.00      Genesis.
+ * 2024/06/10               ITA    1.02      Add header commment
+ *                                           Navlinks to appear as buttons.
+ * 2024/09/17               ITA    1.03      Import context directly. Sign-in dispatch actions removed, since they are auto-performed by the top-most component (CurrentUserState) of this web app.
+ * 2026/02/17  2026/02/17   ITA    1.04      Placed the <ToastContainer> separate from the form, to ensure consistent pop up of toast messages when the toast is called.
  */
 import { Link, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
@@ -119,11 +120,9 @@ function SignInEmail() {
                             <Link className='w3-btn w3-round w3-margin w3-center w3-theme-d5' to='/register'>Register</Link>
                         </p>
                     }
-                    </>
-                                        
-                    <ToastContainer/>
-                </form>
-                
+                    </>                     
+                </form>                                   
+                <ToastContainer/>                
             </div>
     );
 }

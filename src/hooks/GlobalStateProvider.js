@@ -7,13 +7,14 @@
  * 2024/09/18              ITA  1.00     Genesis.
  * 2026/01/08  2026/01/08  ITA  1.01     Imported the specific object, element, from prop-types, reducing build time.
  *                                       Replaced the loDash get() function with an alternative from some-common-functions-js.
+ * 2026/02/17  2026/02/17  ITA  1.02     Created specific dispatch functions for each action, requiring only a payload to call, making it simpler to write dispatch code.
  */
 import { createContext, useReducer, useContext } from "react";
 import { element } from 'prop-types';
 import { get } from 'some-common-functions-js';
 
 // Actions
-export const ActionFunctions = Object.freeze({
+const ActionFunctions = Object.freeze({
     // auth:
     authSignIn: (payload)=> {
         return {
@@ -49,12 +50,31 @@ function GlobalStateProvider({children}) {
     function getSlice(path) {
         return path? get(globalState, path) : globalState;
     };
+
+    function dispatchSignIn(payload) {
+        dispatch(ActionFunctions.authSignIn(payload));
+    }
+
+    function dispatchSignOut() {
+        dispatch(ActionFunctions.authSignOut());
+    }
+
+    function dispatchPersonalDetails(payload) {
+        dispatch(ActionFunctions.authSetPersonalDetails(payload));
+    }
+
+    function dispatchLocation(payload) {
+        dispatch(ActionFunctions.recordLocation(payload));
+    }
     
     return (
         <globalStateContext.Provider
             value={{
                 getSlice,
-                dispatch
+                dispatchSignIn,
+                dispatchSignOut,
+                dispatchLocation,
+                dispatchPersonalDetails
             }}>
             {children}
         </globalStateContext.Provider>

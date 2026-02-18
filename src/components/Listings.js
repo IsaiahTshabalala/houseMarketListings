@@ -22,6 +22,7 @@
  * 2026/01/10  2026/01/11   ITA  1.08     Database listening functionality removed. No longer desired.
  *                                        Improved data loading functionality such that the 'loader' actually runs while the listings are being fetched, instead of the page displaying 'No listings'.
  *                                        getListingsByPlacesQueryObject() now allows price range queries.
+ * 2026/02/17  2026/02/17   ITA  1.09     While more listings were fetched, the loader took the place of the currently displayed listings. Now the loader, displays at the bottom of the current listings while waiting for fetched listings.
  * 
  */
 import { useState, useRef, useEffect, memo } from 'react';
@@ -46,6 +47,7 @@ function Listings() {
     const [currentUser] = useState(getSlice('authCurrentUser'));
     const [listings, setListings] = useState([]);
     const [listingsLoaded, setListingsLoaded] = useState(false);
+    const [moreListingsLoaded, setMoreListingsLoaded] = useState(true);
     const firstRenderRef = useRef(true);
     const lastDocRef = useRef(null); /**The last fetched document from Firestore.*/
     const navigate = useNavigate();
@@ -149,7 +151,11 @@ function Listings() {
     } // async function createQuery() {
 
     async function loadListings() {
-        setListingsLoaded(false);
+        if (listings.length === 0)
+            setListingsLoaded(false);
+        else
+            setMoreListingsLoaded(false);
+
         let theListings = [];
         const existingListings = varExists(VarNames.LISTINGS)? [...getVar(VarNames.LISTINGS)] : [];
         const queryName = getVar(VarNames.QUERY_NAME);
@@ -194,6 +200,7 @@ function Listings() {
 
         setListings([...updatedListings]);
         setListingsLoaded(true);
+        setMoreListingsLoaded(true);
         setPagination(updatedListings.length);
     } // function loadListings()
 
@@ -325,9 +332,15 @@ function Listings() {
                             }
                             
                             {(pageNum === numPages) &&
-                                <p>
-                                    <Link className="w3-btn w3-round w3-theme-d5" onClick={async e=> await loadListings()}>Load more...</Link>
-                                </p>
+                                <>
+                                {(moreListingsLoaded === false)?
+                                    <Loader message={'Loading listings. Please wait...'}/>
+                                    :
+                                    <p>
+                                        <Link className="w3-btn w3-round w3-theme-d5" onClick={async e=> await loadListings()}>Load more...</Link>
+                                    </p>
+                                }
+                                </>
                             }
                         </div>
                         :

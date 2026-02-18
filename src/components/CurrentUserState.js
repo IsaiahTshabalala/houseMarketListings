@@ -8,36 +8,39 @@
  * 2024/10/10             ITA   Current user state moved to the Global State.
  * 2026/01/08  2026/01/08 ITA   Imported a specific object (node) needed from prop-types. Reducing build time.
  *                              Improved the authentication check to be more direct: signed in or not.
+ * 2026/02/16  2026/02/16 ITA   Dispatch actions are now using specific dispatch functions, requiring only a payload; increased simplicity.
  */
 import { node } from 'prop-types';
 import { useEffect, useState } from "react";
-import { useGlobalStateContext, ActionFunctions } from "../hooks/GlobalStateProvider";
+import { useGlobalStateContext } from "../hooks/GlobalStateProvider";
 import { auth, isSignedIn } from "../config/appConfig";
 import { getUser } from "../utilityFunctions/firestoreComms";
 import ErrorPage2 from './ErrorPage2';
 
 function CurrentUserState({children}) {
-    const {dispatch} = useGlobalStateContext();
+    const { dispatchSignIn, dispatchPersonalDetails, dispatchSignOut } = useGlobalStateContext();
     const [error, setError] = useState(null);
 
     useEffect(()=> {
-        (async ()=> {            
+        (async ()=> {
             if (isSignedIn()) {
                 try {
-                    dispatch(ActionFunctions.authSignIn(auth.currentUser));
-                    let user = null;
-                    user = await getUser(auth.currentUser.uid);
+                    dispatchSignIn(auth.currentUser);
+                    let user = await getUser(auth.currentUser.uid);
+
                     if (user) {
-                        dispatch(ActionFunctions.authSetPersonalDetails(user));
+                        dispatchPersonalDetails(user);
                     }
                 } catch (error) {
+                    console.log(error);
                     setError('Could not fetch data from the database. Please reload the page.');
                 }
             }
-            else
-                dispatch(ActionFunctions.authSignOut());
+            else {
+                dispatchSignOut();
+            }
             })();
-    }, [isSignedIn()]);
+    }, [auth?.currentUser?.emailVerified === true && auth?.currentUser?.isAnonymous === false]);
 
     return (
         <>

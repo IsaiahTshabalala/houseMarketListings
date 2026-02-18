@@ -17,10 +17,18 @@
  *                           ITA  1.07     Property types, number of bedrooms, municipalities and main places are now optional filters.
  *                                         Component to call (notify) a parent component provided function after search data has been submitted.
  * 2024/10/28                ITA  1.08     Remove the divs around the Filters and Search buttons. Not necessary.   
- * 2026/01/05   2026/01/02   ITA  1.09     useCollectionsContext() removed. Dropdowns no longer use it.
+ * 2026/01/05   2026/02/12   ITA  1.09     useCollectionsContext() removed. Dropdowns no longer use it.
  *                                         Dropdowns now imported from 'dropdowns-js' where they were moved and refined.
+ * 2026/02/12   2026/02/13   ITA  1.10     Given that the price range is now part of the listings querying, making property types and number of bedrooms optional composite indexes, which cannot be afforded right now.
+ *                                         Therefore, the resolution is to make the property types and number of bedrooms inputs mandatory inputs, so as to stick with the current indexes.
+ *                                         Added labels for the dropdowns.
+ *                                         Replaced single selection dropdowns with radio buttons, where dropdown items <= 10.
+ *                                         Replaced multi-selection dropdowns with check boxes, where dropdown items <= 10.
+ *                                         Added some padding around the error fields.
+ *                                         Used useId to ensure uniqueness of the ids of this component.
+ * 2026/02/16   2026/02/16   ITA  1.11     Improved the styling for the offersOnly checkbox. Also replacded the wrong class attributes with className in the html.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useId } from 'react';
 import { RiArrowDropUpLine, RiArrowDropDownLine } from "react-icons/ri";
 import { BiFilter } from 'react-icons/bi';
 import 'dropdowns-js/style.css';
@@ -28,7 +36,7 @@ import { dropdownStyle, buttonStyle } from './dropdownStyles';
 import { useSharedVarsContext } from '../hooks/SharedVarsProvider';
 import { ToastContainer, toast } from 'react-toastify';
 import FieldError from './FieldError';
-import { Dropdown, DropdownObj, MultiSelectionDropdown, MultiSelectionDropdownObj } from 'dropdowns-js';
+import { DropdownObj, MultiSelectionDropdownObj } from 'dropdowns-js';
 import { getAllProvinces, getMunicipalitiesOfTheProvinces, getMainPlacesOfTheMunicipalities,
          transactionTypes, propertyTypes, numberOfBedrooms, VarNames, salesPriceRanges, rentalPriceRanges,
          QueryNames } from '../utilityFunctions/firestoreComms';
@@ -41,6 +49,7 @@ import { hasValues } from '../utilityFunctions/commonFunctions';
 function SearchListings({
     notify = null // Call back function to tell the parent component that data has been submitted (search botton clicked).
 }) {
+    const componentUid = useId();
     const [expanded, setExpanded] = useState(false);
     const [provinces, setProvinces] = useState([]);
     const [selectedProvinces, setSelectedProvinces] = useState([]);
@@ -98,6 +107,8 @@ function SearchListings({
         // Check whether any property types were selected.
         if (selectedPropTypes.length > 0)
             count++;
+        else
+            errorList[VarNames.PROPERTY_TYPES] = 'No selected property types selected!';
         
         // Check whether any municipalities were selected.
         if (selectedMunicipalities.length > 0) {
@@ -130,13 +141,14 @@ function SearchListings({
         // Check whether any number of bedrooms were selected.
         if (selectedNumBedrooms.length > 0)
             count++;
+        else
+            errorList[VarNames.NUMBER_OF_BEDROOMS] = `Number of bedrooms not selected!`
 
         if (offersOnly)
             count++;
 
         setNumFilters(count);
         setErrors(errorList);
-        console.log(errorList);
         return (!hasValues(errorList));
     } // function validate() {
 
@@ -221,7 +233,6 @@ function SearchListings({
     } // async function provincesSelected()
 
     async function municipalitiesSelected(selMunicipalities) {
-        console.log('municipalitiesSelected', selMunicipalities);
         // Set the selected municipalities to the municipalities currently selected in the multi-selection dropdown.
         setSelectedMunicipalities(selMunicipalities);
         try {
@@ -325,12 +336,36 @@ function SearchListings({
         setPriceRanges(prices);
     } // function transactionTypeSelected()
 
+    function propTypeCheckedUnchecked(selPropType) {
+        const maxNumSelections = 2;
+        setSelectedPropTypes(prev=> {
+            if (prev.includes(selPropType))
+                return prev.filter(propType=> (propType !== selPropType));
+            else if (prev.length < maxNumSelections)
+                return prev.concat(selPropType);
+            else
+                return [...prev];
+        });
+    }
+
     function propTypesSelected(selPropTypes) {
         setSelectedPropTypes(selPropTypes);
     }
 
     function priceRangeSelected(selPriceRange) {
         setSelectedPriceRange(selPriceRange);
+    }
+
+    function numBedroomsCheckedUnchecked(num) {
+        const maxNumSelections = 3;
+        setSelectedNumBedrooms(prev=> {
+            if (prev.includes(num))
+                return prev.filter(item=> (item !== num));
+            else if (prev.length < maxNumSelections)
+                return prev.concat(num);
+            else
+                return [...prev];
+        });        
     }
 
     function numBedroomsSelected(selNumBedrooms) {
@@ -447,7 +482,6 @@ function SearchListings({
                 let selMunicipalities = [];
                 if (varExists(VarNames.MUNICIPALITIES)) {
                     selMunicipalities = [...getVar(VarNames.MUNICIPALITIES)];
-                    console.log('useEffectMunicipalities', selMunicipalities);
                     if (selMunicipalities.length > 0) // True when user returns to this page from the listings page.
                         await municipalitiesSelected(selMunicipalities); // This will effectively set the selected municipalities and set the main places of the currently selected municipalities.
                 }
@@ -457,7 +491,6 @@ function SearchListings({
                 let selMainPlaces = [];
                 if (varExists(VarNames.MAIN_PLACES)) {
                     selMainPlaces = [...getVar(VarNames.MAIN_PLACES)];
-                    console.log('useEffectMainPlaces', selMainPlaces);
                     if (selMainPlaces.length > 0)
                         mainPlacesSelected(selMainPlaces); // set selected main places.
                 }
@@ -543,9 +576,7 @@ function SearchListings({
             } catch (error) {
                 console.log(error);
                 toast.error(error, toastifyTheme);
-            } finally {
-                validate();
-            } // finally            
+            }
         })();
     }, []); // useEffect(() => {
 
@@ -554,6 +585,16 @@ function SearchListings({
             <Loader message='Querying database for listings. Please wait ...' />
         );
     }
+
+    const ids = Object.freeze({
+        transactionTypes: `transactionTypes${componentUid}`,
+        propertyTypes: `propertyTypes${componentUid}`,
+        priceRanges: `priceRanges${componentUid}`,
+        numBedrooms: `numBedrooms${componentUid}`,
+        provinces: `provinces${componentUid}`,
+        municipalities: `municipalities${componentUid}`,
+        mainPlaces: `mainPlaces${componentUid}`
+    });
 
     return (
         <>
@@ -569,24 +610,32 @@ function SearchListings({
                 {expanded &&
                     <>
                         <div className='w3-margin-top'>
-                            { /* Default sort order: 'asc' */}
-                            <Dropdown
-                                label='Transaction Types'
-                                data={transactionTypes}
-                                onItemSelected={transactionTypeSelected}
-                                selected={selectedTransType}
-                                dropdownStyle={dropdownStyle}
-                            />
-                            <FieldError error={errors[VarNames.TRANSACTION_TYPES]} />
+                            <label htmlFor={ids.transactionTypes}>* Transaction Types</label><br/>
+                            <div id={ids.transactionTypes}>
+                            {                            
+                                transactionTypes.toSorted().map(transType=>
+                                    (<div key={transType}>
+                                        <input id={`${ids.transactionTypes}-${transType}`} className="w3-padding-small w3-radio" type="radio" name="transactionType" value={transType} checked={selectedTransType === transType} 
+                                                onChange={e=> transactionTypeSelected(transType)} />
+                                        <label className='w3-padding-small' htmlFor={`${transType}${ids.transactionTypes}`}>{transType}</label>
+                                    </div>)
+                                )
+                            }
+                            </div>
+                            <div className='w3-padding-small'>
+                                <FieldError error={errors[VarNames.TRANSACTION_TYPES]} />
+                            </div>
                         </div>
 
                         <div className='w3-margin-top w3-padding-small'>
-                            <input type='checkbox' name='offersOnly' checked={offersOnly} onChange={handleOffersOnlyChanged}/>
-                            <label htmlFor='offersOnly'> Offers only</label>
+                            <input type='checkbox' className='w3-padding-small w3-check' name='offersOnly' checked={offersOnly} onChange={handleOffersOnlyChanged}/>
+                            <label className='w3-padding-small' htmlFor='offersOnly'> Offers only</label>
                         </div>
 
                         <div className='w3-margin-top'>
+                            <label htmlFor={ids.priceRanges}>* Price Ranges</label><br/>
                             <DropdownObj
+                                id={ids.priceRanges}
                                 label={`Price ${payRate}`}
                                 data={priceRanges}
                                 displayName='priceRange'
@@ -597,34 +646,46 @@ function SearchListings({
                                 dropdownStyle={dropdownStyle}
                                 buttonStyle={buttonStyle}
                             />
-                            <FieldError error={errors[VarNames.PRICE_RANGES]} />
+                            <div className='w3-padding-small'>
+                                <FieldError error={errors[VarNames.PRICE_RANGES]} />
+                            </div>
                         </div>                        
                         
                         <div className='w3-margin-top'>
                             { /*Default sort order */}
-                            <MultiSelectionDropdown
-                                label='Property Types'
-                                data={propertyTypes}
-                                selectedData={selectedPropTypes}
-                                maxNumSelections={2}
-                                onItemsSelected={propTypesSelected}                                
-                                dropdownStyle={dropdownStyle}
-                                buttonStyle={buttonStyle}
-                            />
-                            <FieldError error={errors[VarNames.PROPERTY_TYPES]}/>
+                            <label htmlFor={ids.propertyTypes}>* Property Types</label><br/>                            
+                            <div id={ids.propertyTypes}>
+                                {
+                                    propertyTypes.toSorted().map(propType=> (
+                                        <div key={propType}>
+                                            <input id={`${ids.propertyTypes}-${propType}`} className="w3-padding-small w3-check" type="checkbox" checked={selectedPropTypes.includes(propType)}
+                                                    onChange={e=> propTypeCheckedUnchecked(propType)} />
+                                            <label className='w3-padding-small' htmlFor={`${ids.propertyTypes}-${propType}`}>{propType}</label>
+                                        </div>
+                                    ))
+                                }
+                            </div>
+                            <div className='w3-padding-small'>
+                                <FieldError error={errors[VarNames.PROPERTY_TYPES]}/>
+                            </div>
                         </div>
 
                         <div className='w3-margin-top'>
-                            <MultiSelectionDropdown
-                                label='Number of Bedrooms'
-                                data={numberOfBedrooms}
-                                maxNumSelections={3}
-                                selectedData={selectedNumBedrooms}
-                                onItemsSelected={numBedroomsSelected}
-                                dropdownStyle={dropdownStyle}
-                                buttonStyle={buttonStyle}
-                            />
-                            <FieldError error={errors[VarNames.NUMBER_OF_BEDROOMS]} />
+                            <label htmlFor={ids.numBedrooms}>* Number of bedrooms</label><br/>                         
+                            <div id={ids.numBedrooms}>
+                                {
+                                    numberOfBedrooms.toSorted().map(num=> (
+                                        <div key={num}>
+                                            <input id={`${ids.numBedrooms}-${num}`} className="w3-padding-small w3-check" type="checkbox" checked={selectedNumBedrooms.includes(num)}
+                                                    onChange={e=> numBedroomsCheckedUnchecked(num)} />
+                                            <label className='w3-padding-small' htmlFor={`${ids.numBedrooms}-${num}`}>{num}</label>
+                                        </div>
+                                    ))
+                                }
+                            </div>
+                            <div className='w3-padding-small'>
+                                <FieldError error={errors[VarNames.NUMBER_OF_BEDROOMS]} />
+                            </div>
                         </div>
 
                         {
@@ -634,7 +695,9 @@ function SearchListings({
                         }
                         {provincesLoaded?
                             <div className='w3-margin-top'>
+                                <label htmlFor={ids.provinces}>* Provinces</label><br/>
                                 <MultiSelectionDropdownObj
+                                    id={ids.provinces}
                                     label='Provinces'
                                     data={provinces}
                                     displayName='name'
@@ -646,7 +709,9 @@ function SearchListings({
                                     dropdownStyle={dropdownStyle}
                                     buttonStyle={buttonStyle}
                                 />
-                                <FieldError error={errors[VarNames.PROVINCES]} />
+                                <div className='w3-padding-small'>
+                                    <FieldError error={errors[VarNames.PROVINCES]} />
+                                </div>
                             </div>
                             :
                             <Loader message='Loading provinces ...' />
@@ -654,7 +719,9 @@ function SearchListings({
 
                         {municipalitiesLoaded?
                             <div className='w3-margin-top'>
+                                <label htmlFor={ids.municipalities}>Municipalities</label><br/>
                                 <MultiSelectionDropdownObj
+                                    id={ids.municipalities}
                                     label='Municipalities'
                                     data={municipalities}
                                     displayName='name'
@@ -665,7 +732,9 @@ function SearchListings({
                                     sortFields={['provinceName', 'name']}
                                     dropdownStyle={dropdownStyle} buttonStyle={buttonStyle}
                                 />
-                                <FieldError error={errors[VarNames.MUNICIPALITIES]}/>
+                                <div className='w3-padding-small'>
+                                    <FieldError error={errors[VarNames.MUNICIPALITIES]}/>
+                                </div>
                             </div> 
                             :
                             <Loader message='Loading municipalities ...' />
@@ -673,7 +742,9 @@ function SearchListings({
                         
                         {mainPlacesLoaded?
                             <div className='w3-margin-top'>
+                                <label htmlFor={ids.mainPlaces}>Main Places</label><br/>
                                 <MultiSelectionDropdownObj
+                                    id={ids.mainPlaces}
                                     label='Main Places'
                                     data={mainPlaces}
                                     onItemsSelected={mainPlacesSelected}
@@ -684,7 +755,9 @@ function SearchListings({
                                     sortFields={['provinceName', 'municipalityName', 'name']}
                                     dropdownStyle={dropdownStyle} buttonStyle={buttonStyle}
                                 />
-                                <FieldError error={errors[VarNames.MAIN_PLACES]} />
+                                <div className='w3-padding-small'>
+                                    <FieldError error={errors[VarNames.MAIN_PLACES]} />
+                                </div>
                             </div>
                             :
                             <Loader message='Loading main places ...' />
